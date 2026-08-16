@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    speech-stars.svg
+
+    LANZAR Support Tickets speech bubble decoration.
+
+    Responsibilities
+
+    - Provide Atomic Age decorative starbursts
+    - Add visual emphasis to Stella's dialogue
+    - Remain independent from the speech bubble layout
+    - Scale cleanly at any interface size
+-->
+
+<svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 160 80"
+    fill="none"
+    role="img"
+    aria-labelledby="speechStarsTitle"
+>
+    <title id="speechStarsTitle">Atomic Age decorative starbursts</title>
+
+    <!-- Large Starburst -->
+    <path
+        d="
+            M34 4
+            L38 25
+            L56 15
+            L43 32
+            L64 36
+            L43 40
+            L56 57
+            L38 47
+            L34 68
+            L30 47
+            L12 57
+            L25 40
+            L4 36
+            L25 32
+            L12 15
+            L30 25
+            Z
+        "
+        fill="currentColor"
+    />
+
+    <!-- Small Starburst -->
+    <path
+        d="
+            M112 18
+            L115 31
+            L128 28
+            L118 36
+            L128 44
+            L115 41
+            L112 54
+            L109 41
+            L96 44
+            L106 36
+            L96 28
+            L109 31
+            Z
+        "
+        fill="currentColor"
+    />
+
+    <!-- Tiny Atomic Spark -->
+    <path
+        d="
+            M148 5
+            L150 13
+            L158 15
+            L150 17
+            L148 25
+            L146 17
+            L138 15
+            L146 13
+            Z
+        "
+        fill="currentColor"
+    />
+</svg>

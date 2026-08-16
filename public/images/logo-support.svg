@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="70 10 750 215"
+  preserveAspectRatio="xMidYMid meet"
+>
+
+  <!-- ========================================================
+       LANZAR Support Tickets Logo
+
+       Retro-futurist LANZAR wordmark with orbital motif.
+       Designed to overlap the support terminal.
+       ======================================================== -->
+
+  <!-- Orbit -->
+
+  <ellipse
+    cx="450"
+    cy="120"
+    rx="360"
+    ry="82"
+    fill="none"
+    stroke="#2A728F"
+    stroke-width="4"
+    transform="rotate(-9 450 120)"
+  />
+
+  <!-- Destination Planet -->
+
+  <circle
+    cx="805"
+    cy="82"
+    r="10"
+    fill="#F46B45"
+  />
+
+  <!-- North Star -->
+
+  <g transform="translate(112 58)">
+    <polygon
+      points="0,-12 3,-3 12,0 3,3 0,12 -3,3 -12,0 -3,-3"
+      fill="#E2B84D"
+    />
+  </g>
+
+  <!-- Wordmark -->
+
+  <g transform="skewX(-14)">
+
+    <text
+      x="180"
+      y="142"
+      font-family="Space Grotesk, Arial, sans-serif"
+      font-size="84"
+      font-weight="700"
+      fill="#20303C"
+      letter-spacing="-3"
+    >
+      LANZAR
+    </text>
+
+  </g>
+
+  <!-- Accent Line -->
+
+  <line
+    x1="185"
+    y1="164"
+    x2="710"
+    y2="164"
+    stroke="#2A728F"
+    stroke-width="2"
+    opacity="0.9"
+  />
+
+  <!-- Tagline -->
+
+  <text
+    x="448"
+    y="196"
+    text-anchor="middle"
+    font-family="Space Grotesk, Arial, sans-serif"
+    font-size="20"
+    font-weight="500"
+    letter-spacing="1.2"
+    fill="#F46B45"
+  >
+    IT and Customer Support Tickets
+  </text>
+
+</svg>
