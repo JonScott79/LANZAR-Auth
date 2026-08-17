@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth } from './firebase/auth.js'
 import Login from './pages/Login.jsx'
@@ -24,7 +24,7 @@ function App() {
   const [errorMsg, setErrorMsg] = useState(null)
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser)
       setLoading(false)
       
@@ -32,6 +32,9 @@ function App() {
         const params = new URLSearchParams(window.location.search)
         let redirectUri = params.get('redirect_uri')
         const clientId = params.get('client_id')
+        const state = params.get('state') || 'default_state'
+        const codeChallenge = params.get('code_challenge') || 'default_challenge'
+        const codeChallengeMethod = params.get('code_challenge_method') || 'S256'
         
         // If no redirect requested, default to the Portal
         if (!redirectUri) {
@@ -45,13 +48,38 @@ function App() {
           return
         }
 
-        // Mock Authorization Code Generation (Pending Backend API implementation)
-        const authCode = 'lanzar_auth_code_' + Math.random().toString(36).substring(7)
-        
-        // Append code and execute redirect seamlessly
-        const targetUrl = new URL(redirectUri)
-        targetUrl.searchParams.set('code', authCode)
-        window.location.replace(targetUrl.toString())
+        try {
+            const idToken = await firebaseUser.getIdToken(true);
+            const response = await fetch('http://localhost:4001/authorize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    idToken,
+                    client_id: clientId || 'portal',
+                    redirect_uri: redirectUri,
+                    state,
+                    code_challenge: codeChallenge,
+                    code_challenge_method: codeChallengeMethod
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                console.error('[AUTH] Backend authorization failed:', data);
+                setErrorMsg(data.error_description || 'Authorization failed.');
+                return;
+            }
+
+            // Append code and state and execute redirect seamlessly
+            const targetUrl = new URL(redirectUri)
+            targetUrl.searchParams.set('code', data.code)
+            targetUrl.searchParams.set('state', data.state)
+            window.location.replace(targetUrl.toString())
+        } catch (e) {
+            console.error('[AUTH] Failed to fetch authorization code:', e);
+            setErrorMsg('Failed to securely contact identity server.');
+        }
       }
     })
     return () => unsubscribe()
