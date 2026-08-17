@@ -50,7 +50,10 @@ function App() {
 
         try {
             const idToken = await firebaseUser.getIdToken(true);
-            const response = await fetch('http://localhost:4001/authorize', {
+            
+            const authBackendUrl = window.location.hostname === 'localhost' ? 'http://localhost:4001' : 'https://auth-api.lanzar.me';
+            const response = await fetch(authBackendUrl + '/authorize', {
+  
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
