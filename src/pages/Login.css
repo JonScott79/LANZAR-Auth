@@ -1,17 +1,17 @@
 .login-panel {
   background: white;
-  border: 4px solid var(--deep-navy);
+  border: 2px solid var(--deep-navy);
   border-radius: var(--radius-md);
-  padding: 2.5rem;
-  max-width: 440px;
+  padding: 2rem;
+  max-width: 380px;
   margin: 2rem auto;
-  box-shadow: 8px 8px 0px var(--rocket-orange);
+  box-shadow: 6px 6px 0px var(--rocket-orange);
 }
 
 .login-title {
   font-family: var(--font-heading);
   color: var(--deep-navy);
-  font-size: 2.2rem;
+  font-size: 1.8rem;
   margin-top: 0;
   margin-bottom: 1rem;
   text-transform: uppercase;
@@ -23,8 +23,8 @@
 .login-desc {
   font-family: var(--font-body);
   color: var(--text-secondary);
-  font-size: 1.1rem;
-  margin-bottom: 1.8rem;
+  font-size: 0.95rem;
+  margin-bottom: 1.2rem;
   line-height: 1.6;
 }
 
@@ -43,18 +43,18 @@
   font-family: var(--font-heading);
   color: var(--rocket-orange);
   font-weight: 800;
-  margin-bottom: 0.75rem;
-  font-size: 1rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
   text-transform: uppercase;
 }
 
 .login-form input {
   width: 100%;
-  padding: 1rem;
+  padding: 0.8rem;
   border: 2px solid var(--deep-navy);
   border-radius: var(--radius-sm);
   font-family: var(--font-body);
-  font-size: 1.1rem;
+  font-size: 0.95rem;
   background: var(--bg-primary);
   box-sizing: border-box;
 }
@@ -84,12 +84,12 @@
   width: 100%;
   background: var(--rocket-orange);
   color: white;
-  border: 3px solid var(--deep-navy);
+  border: 2px solid var(--deep-navy);
   border-radius: var(--radius-pill);
-  padding: 0.85rem 1.5rem;
+  padding: 0.7rem 1.2rem;
   font-family: var(--font-heading);
   font-weight: 800;
-  font-size: 1.1rem;
+  font-size: 0.95rem;
   cursor: pointer;
   text-transform: uppercase;
   box-shadow: 4px 4px 0px var(--deep-navy);
@@ -122,24 +122,24 @@
 .error-msg {
   color: #c2185b;
   background: #fce4ec;
-  padding: 1rem;
+  padding: 0.8rem;
   border: 2px solid #c2185b;
   border-radius: var(--radius-sm);
   font-family: var(--font-code);
   font-size: 0.95rem;
-  margin-top: 1.5rem;
+  margin-top: 1.2rem;
   font-weight: bold;
 }
 
 .success-msg {
   color: #2e7d32;
   background: #e8f5e9;
-  padding: 1rem;
+  padding: 0.8rem;
   border: 2px solid #2e7d32;
   border-radius: var(--radius-sm);
   font-family: var(--font-code);
   font-size: 0.95rem;
-  margin-top: 1.5rem;
+  margin-top: 1.2rem;
   font-weight: bold;
 }
 
@@ -153,15 +153,15 @@
   justify-content: center;
   gap: 14px;
   width: 100%;
-  min-height: 52px;
-  margin-top: 1.5rem;
-  padding: 12px 24px;
-  border: 3px solid var(--retro-teal);
+  min-height: 44px;
+  margin-top: 1.2rem;
+  padding: 8px 16px;
+  border: 2px solid var(--retro-teal);
   border-radius: var(--radius-pill);
   background: var(--bg-secondary);
   color: var(--deep-navy);
   font-family: var(--font-heading);
-  font-size: 1.1rem;
+  font-size: 0.95rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   cursor: pointer;
@@ -188,8 +188,8 @@
 }
 
 .google-icon {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   flex: 0 0 auto;
 }
 
