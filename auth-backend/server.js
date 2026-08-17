@@ -7,9 +7,26 @@ const crypto = require('crypto');
 const { AuthorizationCodeStore } = require('./store');
 const { getClient } = require('./clients');
 
-const serviceAccount = require('../../firebase-credentials/lanzar-95ae3-firebase-adminsdk-fbsvc-86e8ea5817.json');
+let credentialConfig;
+if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+  try {
+    const serviceAccountParams = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+    credentialConfig = cert(serviceAccountParams);
+  } catch (err) {
+    console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY from environment');
+    process.exit(1);
+  }
+} else {
+  try {
+    const serviceAccount = require('../../firebase-credentials/lanzar-95ae3-firebase-adminsdk-fbsvc-86e8ea5817.json');
+    credentialConfig = cert(serviceAccount);
+  } catch (err) {
+    console.warn('No local service account file found, and no FIREBASE_SERVICE_ACCOUNT_KEY provided.');
+  }
+}
+
 initializeApp({
-  credential: cert(serviceAccount)
+  credential: credentialConfig
 });
 
 const app = express();
