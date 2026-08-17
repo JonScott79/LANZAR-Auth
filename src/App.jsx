@@ -100,7 +100,7 @@ function App() {
   // The Login component handles Firebase Auth. Once authenticated, the useEffect above will fire and redirect.
   return (
     <div className="portal-app">
-      <div className="portal-container" style={{ alignItems: 'center', justifyContent: 'center' }}>
+      <div className="auth-wrapper">
         {errorMsg ? (
           <div className="login-panel" style={{ textAlign: 'center' }}>
             <h2 className="login-title">ERROR</h2>
