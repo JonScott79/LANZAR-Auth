@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth } from './firebase/auth.js'
 import Login from './pages/Login.jsx'
@@ -48,6 +48,8 @@ function App() {
           return
         }
 
+        const cleanRedirectUri = redirectUri.replace(/\/+$/, '') || redirectUri;
+
         try {
             const idToken = await firebaseUser.getIdToken(true);
             
@@ -59,7 +61,7 @@ function App() {
                 body: JSON.stringify({
                     idToken,
                     client_id: clientId || 'portal',
-                    redirect_uri: redirectUri,
+                    redirect_uri: cleanRedirectUri,
                     state,
                     code_challenge: codeChallenge,
                     code_challenge_method: codeChallengeMethod

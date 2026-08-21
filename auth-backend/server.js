@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { initializeApp, cert } = require('firebase-admin/app');
@@ -48,7 +48,10 @@ app.post('/authorize', async (req, res) => {
         if (!client || !client.enabled) {
             return res.status(400).json({ error: 'invalid_client', error_description: 'Unknown or disabled client' });
         }
-        if (!client.redirectUris.includes(redirect_uri)) {
+        const normalizedRedirect = redirect_uri.replace(/\/+$/, '');
+        const isAuthorized = client.redirectUris.some(uri => uri.replace(/\/+$/, '') === normalizedRedirect);
+        if (!isAuthorized) {
+            console.warn(`[AUTH] Unauthorized redirect URI attempt for ${client_id}: ${redirect_uri}`);
             return res.status(400).json({ error: 'invalid_request', error_description: 'Unauthorized redirect URI' });
         }
 
@@ -97,8 +100,10 @@ app.post('/exchange', async (req, res) => {
             console.warn(`[EXCHANGE] Expired code used by ${client_id}`);
             return res.status(400).json({ error: 'invalid_grant' });
         }
-        if (record.clientId !== client_id || record.redirectUri !== redirect_uri) {
-            console.warn('[EXCHANGE] Client ID or Redirect URI mismatch');
+        const reqRedirect = redirect_uri.replace(/\/+$/, '');
+        const recRedirect = record.redirectUri.replace(/\/+$/, '');
+        if (record.clientId !== client_id || reqRedirect !== recRedirect) {
+            console.warn('[EXCHANGE] Client ID or Redirect URI mismatch:', { recordClient: record.clientId, client_id, recRedirect, reqRedirect });
             return res.status(400).json({ error: 'invalid_grant' });
         }
 
