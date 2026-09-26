@@ -48,6 +48,16 @@ const clients = {
             'https://pythos.lanzar.me/'
         ],
         enabled: true
+    },
+    'ai': {
+        id: 'ai',
+        redirectUris: [
+            'http://localhost:5176',
+            'http://localhost:5176/',
+            'https://ai.lanzar.me',
+            'https://ai.lanzar.me/'
+        ],
+        enabled: true
     }
 };
 function getClient(clientId) { return clients[clientId]; }
