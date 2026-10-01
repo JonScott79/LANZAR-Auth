@@ -1,92 +1,172 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 260" width="100%" height="100%">
+    <defs>
+        <!-- Rocket Body Gradient -->
+        <linearGradient id="rocketBodyGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#4A97B3"/>
+            <stop offset="50%" stop-color="#2A728F"/>
+            <stop offset="100%" stop-color="#20596E"/>
+        </linearGradient>
 
-<svg
-  xmlns="http://www.w3.org/2000/svg"
-  viewBox="70 10 750 215"
-  preserveAspectRatio="xMidYMid meet"
->
+        <!-- Rocket Orange Gradient -->
+        <linearGradient id="rocketOrangeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#FF8A63"/>
+            <stop offset="100%" stop-color="#F46B45"/>
+        </linearGradient>
 
-  <!-- ========================================================
-       LANZAR Support Tickets Logo
+        <!-- Jet Flame Gradient -->
+        <linearGradient id="flameGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#FFE587"/>
+            <stop offset="55%" stop-color="#F7C856"/>
+            <stop offset="100%" stop-color="#E2B84D"/>
+        </linearGradient>
 
-       Retro-futurist LANZAR wordmark with orbital motif.
-       Designed to overlap the support terminal.
-       ======================================================== -->
+        <!-- Orbit Glow Gradient -->
+        <linearGradient id="orbitGlow" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#2A728F" stop-opacity="0.3"/>
+            <stop offset="50%" stop-color="#38BDF8" stop-opacity="0.9"/>
+            <stop offset="100%" stop-color="#2A728F" stop-opacity="0.3"/>
+        </linearGradient>
 
-  <!-- Orbit -->
+        <!-- Wordmark Gradient -->
+        <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#FFFFFF"/>
+            <stop offset="100%" stop-color="#E0F2FE"/>
+        </linearGradient>
 
-  <ellipse
-    cx="450"
-    cy="120"
-    rx="360"
-    ry="82"
-    fill="none"
-    stroke="#2A728F"
-    stroke-width="4"
-    transform="rotate(-9 450 120)"
-  />
+        <!-- Glow Filter -->
+        <filter id="glowFilter" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="3" result="blur"/>
+            <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+    </defs>
 
-  <!-- Destination Planet -->
+    <!-- Outer Orbit Ellipse -->
+    <ellipse
+        cx="450"
+        cy="122"
+        rx="400"
+        ry="84"
+        fill="none"
+        stroke="url(#orbitGlow)"
+        stroke-width="3.5"
+        transform="rotate(-8 450 122)" />
 
-  <circle
-    cx="805"
-    cy="82"
-    r="10"
-    fill="#F46B45"
-  />
+    <!-- Storage / Flight Track Platter Arc (Dashed) -->
+    <ellipse
+        cx="450"
+        cy="122"
+        rx="340"
+        ry="68"
+        fill="none"
+        stroke="#2A728F"
+        stroke-width="1.5"
+        stroke-dasharray="14 8 28 8"
+        opacity="0.55"
+        transform="rotate(-8 450 122)" />
 
-  <!-- North Star -->
+    <!-- Gold Sparkle Stars -->
+    <g transform="translate(165 75) scale(0.9)" filter="url(#glowFilter)">
+        <polygon points="0,-10 2.5,-2.5 10,0 2.5,2.5 0,10 -2.5,2.5 -10,0 -2.5,-2.5" fill="#E2B84D" />
+    </g>
+    <g transform="translate(710 155) scale(0.65)">
+        <polygon points="0,-10 2.5,-2.5 10,0 2.5,2.5 0,10 -2.5,2.5 -10,0 -2.5,-2.5" fill="#FFE587" />
+    </g>
+    <g transform="translate(820 68) scale(0.8)">
+        <polygon points="0,-10 2.5,-2.5 10,0 2.5,2.5 0,10 -2.5,2.5 -10,0 -2.5,-2.5" fill="#E2B84D" />
+    </g>
 
-  <g transform="translate(112 58)">
-    <polygon
-      points="0,-12 3,-3 12,0 3,3 0,12 -3,3 -12,0 -3,-3"
-      fill="#E2B84D"
-    />
-  </g>
+    <!-- Destination Planet (Rocket Orange) -->
+    <circle
+        cx="845"
+        cy="82"
+        r="11"
+        fill="url(#rocketOrangeGrad)"
+        filter="url(#glowFilter)"/>
+    <circle
+        cx="842"
+        cy="79"
+        r="3"
+        fill="#FF8A63"
+        opacity="0.8"/>
 
-  <!-- Wordmark -->
+    <!-- Lanzar Retro Rocket Emblem (Left side) -->
+    <g transform="translate(42 28) rotate(-28) scale(0.53)">
+        <!-- Jet Flame -->
+        <path d="M100 168 C86 188 88 220 100 248 C112 220 114 188 100 168Z" fill="url(#flameGrad)" filter="url(#glowFilter)"/>
+        <path d="M100 176 C95 192 96 214 100 230 C104 214 105 192 100 176Z" fill="#FFF2B3" opacity=".85"/>
 
-  <g transform="skewX(-14)">
+        <!-- Left Fin -->
+        <path d="M78 138 C58 150 42 170 28 190 L80 165Z" fill="url(#rocketOrangeGrad)"/>
+        <!-- Right Fin -->
+        <path d="M122 138 C142 150 158 170 172 190 L120 165Z" fill="url(#rocketOrangeGrad)"/>
 
+        <!-- Body -->
+        <path d="M100 5 C118 42 124 95 122 175 L100 160 L78 175 C76 95 82 42 100 5Z" fill="url(#rocketBodyGrad)"/>
+        <!-- Nose Cone -->
+        <path d="M100 10 L111 40 L89 40Z" fill="url(#rocketOrangeGrad)"/>
+
+        <!-- Window Ring -->
+        <circle cx="100" cy="78" r="14" fill="none" stroke="#D5DDE2" stroke-width="3"/>
+        <circle cx="100" cy="78" r="11" fill="#FFFFFF"/>
+        <circle cx="97" cy="74" r="3" fill="#38BDF8" opacity=".8"/>
+    </g>
+
+    <!-- Wordmark LANZAR -->
+    <g transform="skewX(-14)">
+        <text
+            x="210"
+            y="142"
+            font-family="'Space Grotesk', -apple-system, sans-serif"
+            font-size="86"
+            font-weight="800"
+            fill="url(#textGrad)"
+            letter-spacing="-3">
+            LANZAR
+        </text>
+    </g>
+    
+
+    <!-- Accent Beam Line -->
+    <line
+        x1="200"
+        y1="164"
+        x2="745"
+        y2="164"
+        stroke="#2A728F"
+        stroke-width="2.5"
+        opacity="0.9" />
+    <circle cx="200" cy="164" r="3.5" fill="#38BDF8"/>
+    <circle cx="745" cy="164" r="3.5" fill="#F46B45"/>
+
+    <!-- Tagline -->
     <text
-      x="180"
-      y="142"
-      font-family="Space Grotesk, Arial, sans-serif"
-      font-size="84"
-      font-weight="700"
-      fill="#20303C"
-      letter-spacing="-3"
-    >
-      LANZAR
+        x="465"
+        y="198"
+        text-anchor="middle"
+        font-family="'Space Grotesk', -apple-system, sans-serif"
+        font-size="20.5"
+        font-weight="600"
+        letter-spacing="2.2"
+        fill="#F46B45">
+        IT and Customer Support Tickets
     </text>
 
-  </g>
-
-  <!-- Accent Line -->
-
-  <line
-    x1="185"
-    y1="164"
-    x2="710"
-    y2="164"
-    stroke="#2A728F"
-    stroke-width="2"
-    opacity="0.9"
-  />
-
-  <!-- Tagline -->
-
-  <text
-    x="448"
-    y="196"
-    text-anchor="middle"
-    font-family="Space Grotesk, Arial, sans-serif"
-    font-size="20"
-    font-weight="500"
-    letter-spacing="1.2"
-    fill="#F46B45"
-  >
-    IT and Customer Support Tickets
-  </text>
-
+    
+    <!-- Subtitle -->
+    <text
+        x="450"
+        y="226"
+        text-anchor="middle"
+        font-family="'Plus Jakarta Sans', system-ui, sans-serif"
+        font-size="11.5"
+        font-weight="500"
+        letter-spacing="3"
+        fill="#94A3B8"
+        opacity="0.8">
+        TECHNICAL OPERATIONS &AMP; RAPID RESOLUTION
+    </text>
 </svg>
