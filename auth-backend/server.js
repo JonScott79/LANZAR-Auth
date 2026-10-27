@@ -49,7 +49,10 @@ app.post('/authorize', async (req, res) => {
             return res.status(400).json({ error: 'invalid_client', error_description: 'Unknown or disabled client' });
         }
         const normalizedRedirect = redirect_uri.replace(/\/+$/, '');
-        const isAuthorized = client.redirectUris.some(uri => uri.replace(/\/+$/, '') === normalizedRedirect);
+        const isAuthorized = client.redirectUris.some(uri => {
+            const clean = uri.replace(/\/+$/, '');
+            return clean === normalizedRedirect || normalizedRedirect.startsWith(clean + '/');
+        });
         if (!isAuthorized) {
             console.warn(`[AUTH] Unauthorized redirect URI attempt for ${client_id}: ${redirect_uri}`);
             return res.status(400).json({ error: 'invalid_request', error_description: 'Unauthorized redirect URI' });

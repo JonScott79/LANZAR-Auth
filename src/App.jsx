@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
-import { auth } from './firebase/auth.js'
+import { auth, signOutUser } from './firebase/auth.js'
 import Login from './pages/Login.jsx'
 import './App.css'
 
@@ -24,6 +24,15 @@ function App() {
   const [errorMsg, setErrorMsg] = useState(null)
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('logout') === 'true') {
+      const redirectUri = params.get('redirect_uri') || 'https://portal.lanzar.me';
+      const cleanRedirect = isAllowedRedirect(redirectUri) ? redirectUri : 'https://portal.lanzar.me';
+      signOutUser().finally(() => {
+        window.location.replace(cleanRedirect);
+      });
+      return;
+    }
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser)
       setLoading(false)
