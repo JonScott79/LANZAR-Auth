@@ -1,3 +1,6 @@
+// clients.js
+const isProduction = process.env.NODE_ENV === 'production';
+
 const clients = {
     'portal': {
         id: 'portal',
@@ -60,5 +63,19 @@ const clients = {
         enabled: true
     }
 };
-function getClient(clientId) { return clients[clientId]; }
+
+function getClient(clientId) {
+    const client = clients[clientId];
+    if (!client) return null;
+
+    // In production, strictly enforce HTTPS and strip localhost redirect destinations
+    if (isProduction) {
+        return {
+            ...client,
+            redirectUris: client.redirectUris.filter(uri => !uri.startsWith('http://localhost') && !uri.startsWith('http://127.0.0.1'))
+        };
+    }
+    return client;
+}
+
 module.exports = { getClient };

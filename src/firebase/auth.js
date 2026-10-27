@@ -7,6 +7,7 @@
 
     - Configure Google authentication
     - Sign users in with Google
+    - Sign users in / register with Email & Password
     - Sign users out
     - Expose Firebase authentication state
 */
@@ -17,6 +18,9 @@ import {
   signInWithPopup,
   signOut,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  sendEmailVerification,
   sendPasswordResetEmail,
 } from 'firebase/auth'
 
@@ -39,7 +43,7 @@ googleProvider.setCustomParameters({
 })
 
 // ==========================
-// Sign In
+// Sign In with Google
 // ==========================
 
 export async function signInWithGoogle() {
@@ -66,6 +70,32 @@ export function signOutUser() {
 export async function signInWithEmail(email, password) {
   const result = await signInWithEmailAndPassword(auth, email, password)
   return result.user
+}
+
+// ==========================
+// Email Registration
+// ==========================
+
+export async function registerWithEmail(email, password, displayName) {
+  const result = await createUserWithEmailAndPassword(auth, email, password)
+  if (displayName && result.user) {
+    try {
+      await updateProfile(result.user, { displayName })
+    } catch (e) {
+      console.warn('Failed to update display name profile:', e.message)
+    }
+  }
+  return result.user
+}
+
+// ==========================
+// Email Verification
+// ==========================
+
+export async function sendEmailVerificationToUser(user) {
+  if (user) {
+    await sendEmailVerification(user)
+  }
 }
 
 // ==========================
