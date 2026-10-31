@@ -581,6 +581,11 @@ export default function Login({
           </>
         )}
       </form>
+
+      <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <a href="https://lanzar.me" style={{ color: '#94a3b8', textDecoration: 'none', fontWeight: 600 }}>&larr; Return to LANZAR.me</a>
+        <a href="tel:+15085718819" style={{ color: '#f46b45', textDecoration: 'none', fontWeight: 700 }}>📞 Dispatch: (508) 571-8819</a>
+      </div>
     </div>
   )
 }
