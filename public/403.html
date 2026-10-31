@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>403 — Customer Tier Restricted | LANZAR Portal</title>
+  <meta name="description" content="Error 403: Customer tier clearance required. Contact support for provisioning." />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/error-page.css" />
+  <style>
+    :root {
+      --accent-theme: var(--theme-stella);
+      --accent-glow: var(--theme-stella-glow);
+    }
+  </style>
+</head>
+<body>
+  <div class="crt-scanlines" aria-hidden="true"></div>
+
+  <div class="error-viewport">
+    <header class="error-header" role="banner">
+      <a href="index.html" class="brand-link" title="LANZAR Customer Portal">
+        <img src="images/logo-support.svg" alt="LANZAR Portal" class="brand-logo" style="height: 38px;" />
+      </a>
+      <div class="header-status-badge">
+        <span class="pulse-red" aria-hidden="true"></span>
+        <span>SECURITY PROTOCOL // CODE 403</span>
+      </div>
+    </header>
+
+    <main class="stage-container" role="main">
+      <div class="character-podium">
+        <div class="character-halo" style="background: radial-gradient(circle, var(--theme-stella) 0%, transparent 70%);"></div>
+        <div class="character-art-wrapper">
+          <img src="images/characters/stella/stella-blue-white-dots-bob.png" alt="Stella holding error sign" class="character-img" />
+          <div class="sign-clamp-attachment" aria-hidden="true">
+            <div class="clamp-bracket"></div>
+            <div class="clamp-bracket"></div>
+          </div>
+        </div>
+      </div>
+
+      <article class="held-sign-board" aria-label="Error 403 Notice">
+        <div class="sign-chains" aria-hidden="true">
+          <div class="chain-link"></div>
+          <div class="chain-link"></div>
+        </div>
+        <div class="screw screw-tl" aria-hidden="true"></div>
+        <div class="screw screw-tr" aria-hidden="true"></div>
+        <div class="screw screw-bl" aria-hidden="true"></div>
+        <div class="screw screw-br" aria-hidden="true"></div>
+
+        <div class="sign-marquee-top">
+          <span class="sign-badge">🔒 CLEARANCE RESTRICTED 🔒</span>
+          <div class="sign-telemetry">SECTOR: <span>PROVISIONING_REQUIRED</span></div>
+        </div>
+
+        <div class="error-code-marquee">
+          <div class="error-code-num">403</div>
+          <div class="error-code-label">Access Denied: Unprovisioned</div>
+        </div>
+
+        <div class="character-speech-bubble">
+          <div class="speech-speaker-tag">
+            <span>⭐ STELLA - CHIEF OF PROTOCOL:</span>
+          </div>
+          <p class="speech-quote">
+            "Your LANZAR ID is valid, but your profile has not been provisioned with customer portal entitlements yet! 🔒 Don't worry—our support dispatch team can quickly link your organization's service agreement to grant you full administrative access."
+          </p>
+        </div>
+
+        <div class="sign-actions">
+          <a href="https://tickets.lanzar.me/" class="btn-error-primary">
+            <span>🎫 Request Portal Provisioning</span>
+          </a>
+          <a href="https://lanzar.me/" class="btn-error-secondary">
+            <span>🚀 Lanzar Mothership</span>
+          </a>
+          <a href="errors.html" class="btn-error-secondary">
+            <span>📟 Diagnostic Deck</span>
+          </a>
+        </div>
+      </article>
+    </main>
+
+    <footer class="error-footer" role="contentinfo">
+      <div>&copy; 2026 LANZAR Customer Portal. Verified Identity & Support Management.</div>
+      <ul class="error-footer-links">
+        <li><a href="index.html">Portal</a></li>
+        <li><a href="https://tickets.lanzar.me/">Support Desk</a></li>
+        <li><a href="https://lanzar.me/">Mothership</a></li>
+        <li><a href="errors.html">All Error Codes</a></li>
+      </ul>
+    </footer>
+  </div>
+</body>
+</html>

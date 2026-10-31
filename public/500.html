@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>500 — Portal Bridge Error | LANZAR Portal</title>
+  <meta name="description" content="Error 500: Database sync interrupted. Rusty is servicing the bridge!" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/error-page.css" />
+  <style>
+    :root {
+      --accent-theme: var(--theme-rusty);
+      --accent-glow: var(--theme-rusty-glow);
+    }
+  </style>
+</head>
+<body>
+  <div class="crt-scanlines" aria-hidden="true"></div>
+
+  <div class="error-viewport">
+    <header class="error-header" role="banner">
+      <a href="index.html" class="brand-link" title="LANZAR Customer Portal">
+        <img src="images/logo-support.svg" alt="LANZAR Portal" class="brand-logo" style="height: 38px;" />
+      </a>
+      <div class="header-status-badge">
+        <span class="pulse-red" aria-hidden="true"></span>
+        <span>DATABASE ALERT // CODE 500</span>
+      </div>
+    </header>
+
+    <main class="stage-container" role="main">
+      <div class="character-podium">
+        <div class="character-halo" style="background: radial-gradient(circle, var(--theme-rusty) 0%, transparent 70%);"></div>
+        <div class="character-art-wrapper">
+          <img src="images/characters/Rusty/rusty-001.png" alt="Rusty holding error sign" class="character-img" />
+          <div class="sign-clamp-attachment" aria-hidden="true">
+            <div class="clamp-bracket"></div>
+            <div class="clamp-bracket"></div>
+          </div>
+        </div>
+      </div>
+
+      <article class="held-sign-board" aria-label="Error 500 Notice">
+        <div class="sign-chains" aria-hidden="true">
+          <div class="chain-link"></div>
+          <div class="chain-link"></div>
+        </div>
+        <div class="screw screw-tl" aria-hidden="true"></div>
+        <div class="screw screw-tr" aria-hidden="true"></div>
+        <div class="screw screw-bl" aria-hidden="true"></div>
+        <div class="screw screw-br" aria-hidden="true"></div>
+
+        <div class="sign-marquee-top">
+          <span class="sign-badge">⚠️ BRIDGE SYNCHRONIZATION FAULT ⚠️</span>
+          <div class="sign-telemetry">STORE: <span>FIRESTORE_RETRY_BACKOFF</span></div>
+        </div>
+
+        <div class="error-code-marquee">
+          <div class="error-code-num">500</div>
+          <div class="error-code-label">Portal Data Bridge Error</div>
+        </div>
+
+        <div class="character-speech-bubble">
+          <div class="speech-speaker-tag">
+            <span>🤖 RUSTY - STATION ENGINEER:</span>
+          </div>
+          <p class="speech-quote">
+            "CLANK! BZZT! The portal data bridge hit an unexpected lock while fetching your customer record! I've cleared the cache queues and re-initialized the database listener. Hit refresh to sync back up!"
+          </p>
+        </div>
+
+        <div class="sign-actions">
+          <button onclick="window.location.reload()" class="btn-error-primary" type="button">
+            <span>🔄 Retry Sync</span>
+          </button>
+          <a href="index.html" class="btn-error-secondary">
+            <span>🚀 Portal Launchpad</span>
+          </a>
+          <a href="errors.html" class="btn-error-secondary">
+            <span>📟 Diagnostic Deck</span>
+          </a>
+        </div>
+      </article>
+    </main>
+
+    <footer class="error-footer" role="contentinfo">
+      <div>&copy; 2026 LANZAR Customer Portal. Verified Identity & Support Management.</div>
+      <ul class="error-footer-links">
+        <li><a href="index.html">Portal</a></li>
+        <li><a href="https://lanzar.me/">Mothership</a></li>
+        <li><a href="errors.html">All Error Codes</a></li>
+      </ul>
+    </footer>
+  </div>
+</body>
+</html>
