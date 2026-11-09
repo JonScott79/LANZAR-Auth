@@ -360,3 +360,48 @@
   border-radius: var(--radius-sm);
   color: var(--deep-navy);
 }
+
+
+/* The Dispatch Newsletter Promo Box (Amendment #003) */
+.dispatch-promo-box {
+  background: rgba(255, 215, 0, 0.05);
+  border: 1px solid rgba(255, 215, 0, 0.25);
+  border-radius: var(--radius-md);
+  padding: 1.15rem;
+  margin: 1.25rem 0;
+  text-align: left;
+}
+
+.dispatch-badge {
+  display: inline-block;
+  font-family: var(--font-code);
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--color-gold, #ffd700);
+  background: rgba(255, 215, 0, 0.12);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-bottom: 0.4rem;
+}
+
+.dispatch-heading {
+  margin: 0 0 0.35rem 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: var(--color-gold, #ffd700);
+}
+
+.dispatch-tagline {
+  margin: 0 0 0.85rem 0;
+  font-size: 0.82rem;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+.dispatch-checkbox-row {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 215, 0, 0.15);
+}

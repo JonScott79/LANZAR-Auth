@@ -524,19 +524,26 @@ export default function Login({
           </div>
         )}
 
-        {/* Newsletter Opt-In Checkbox (Phase 1 Requirement) */}
+        {/* The Dispatch Newsletter Promotion (Amendment #003) */}
         {mode === 'register' && (
-          <div className="checkbox-container">
-            <input 
-              type="checkbox" 
-              id="dispatch-optin"
-              checked={dispatchOptIn}
-              onChange={(e) => setDispatchOptIn(e.target.checked)}
-              disabled={loading}
-            />
-            <label htmlFor="dispatch-optin" className="checkbox-label">
-              Send me <strong>The LANZAR Dispatch</strong> — news, project updates, new services, and occasional offers.
-            </label>
+          <div className="dispatch-promo-box">
+            <div className="dispatch-badge">COMMUNITY INTELLIGENCE</div>
+            <h4 className="dispatch-heading">GET THE DISPATCH</h4>
+            <p className="dispatch-tagline">
+              News from the LANZAR universe. New products, launches, development updates, special announcements, and things we&apos;re building.
+            </p>
+            <div className="checkbox-container dispatch-checkbox-row">
+              <input 
+                type="checkbox" 
+                id="dispatch-optin"
+                checked={dispatchOptIn}
+                onChange={(e) => setDispatchOptIn(e.target.checked)}
+                disabled={loading}
+              />
+              <label htmlFor="dispatch-optin" className="checkbox-label">
+                <strong>Subscribe to THE DISPATCH</strong> and stay connected.
+              </label>
+            </div>
           </div>
         )}
 
