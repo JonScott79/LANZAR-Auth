@@ -1,11 +1,22 @@
 // test-phase2-core.cjs
 // Comprehensive Automated Test Battery for LANZAR ID Core Services (Phase 2 + Amendments #001 & #002)
 
-const { cert, initializeApp, getApps } = require('firebase-admin/app');
-const { getAuth } = require('firebase-admin/auth');
-const { getFirestore, FieldValue } = require('firebase-admin/firestore');
-const fs = require('fs');
+const path = require('path');
+module.paths.push(path.resolve(__dirname, 'auth-backend/node_modules'));
+module.paths.push(path.resolve(__dirname, '../node_modules'));
+
 const crypto = require('crypto');
+
+// Level 1 In-Memory Test Harness (Production credentials eliminated)
+const { MockFirestore, MockAuthAdmin } = require('./test-utils/mockFirebase.cjs');
+
+if (process.env.APP_ENV === 'production' || process.env.NODE_ENV === 'production') {
+    console.error('❌ [FATAL] Test suite must never execute against production environment.');
+    process.exit(1);
+}
+
+const db = new MockFirestore();
+const auth = new MockAuthAdmin();
 
 const {
     generateBase32Secret,
@@ -25,12 +36,6 @@ const { FounderService } = require('./auth-backend/founderService.js');
 const { ProfileService } = require('./auth-backend/profileService.js');
 const { SMSService, MockSMSProvider } = require('./auth-backend/smsService.js');
 const { recordSecurityEvent, sanitizeAuditDetails } = require('./auth-backend/auditService.js');
-
-const credentialPath = process.env.FIREBASE_CREDENTIAL_PATH || 'C:\\Projects\\LANZAR\\firebase-credentials\\lanzar-95ae3-firebase-adminsdk-fbsvc-86e8ea5817.json';
-const serviceAccount = JSON.parse(fs.readFileSync(credentialPath, 'utf8'));
-const app = getApps().length > 0 ? getApps()[0] : initializeApp({ credential: cert(serviceAccount) });
-const db = getFirestore(app);
-const auth = getAuth(app);
 
 const sessionService = new SessionService(db, auth);
 const founderService = new FounderService(db);

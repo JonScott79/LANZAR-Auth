@@ -1,18 +1,23 @@
 // test-auth-and-mfa.cjs
-const { cert, initializeApp, getApps } = require('firebase-admin/app');
-const { getAuth } = require('firebase-admin/auth');
-const { getFirestore, FieldValue } = require('firebase-admin/firestore');
-const fs = require('fs');
+const path = require('path');
+module.paths.push(path.resolve(__dirname, 'auth-backend/node_modules'));
+module.paths.push(path.resolve(__dirname, '../node_modules'));
+
+const { FieldValue } = require('firebase-admin/firestore');
 const crypto = require('crypto');
 const mfa = require('./auth-backend/mfaService.js');
 const { AuthorizationCodeStore } = require('./auth-backend/store.js');
 const { getClient } = require('./auth-backend/clients.js');
+const { MockFirestore, MockAuthAdmin } = require('./test-utils/mockFirebase.cjs');
 
-const credentialPath = 'C:\\Projects\\LANZAR\\firebase-credentials\\lanzar-95ae3-firebase-adminsdk-fbsvc-86e8ea5817.json';
-const serviceAccount = JSON.parse(fs.readFileSync(credentialPath, 'utf8'));
-const app = getApps().length > 0 ? getApps()[0] : initializeApp({ credential: cert(serviceAccount) });
-const db = getFirestore(app);
-const auth = getAuth(app);
+// Fail-closed guard against production targeting
+if (process.env.APP_ENV === 'production' || process.env.NODE_ENV === 'production') {
+  console.error('❌ [FATAL] Test suite must never execute against production environment.');
+  process.exit(1);
+}
+
+const db = new MockFirestore();
+const auth = new MockAuthAdmin();
 
 async function runAuthAndMfaTests() {
   console.log('========================================================');
