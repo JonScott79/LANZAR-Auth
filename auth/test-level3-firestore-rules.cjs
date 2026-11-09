@@ -1,7 +1,7 @@
 /**
  * test-level3-firestore-rules.cjs
  *
- * LANZAR ID — Level 3 Firestore Security Rules Verification Battery (Step 4.1 Audit & Completion)
+ * LANZAR ID — Level 3 Firestore Security Rules Verification Battery (Step 4.2 Closeout)
  * Target Specification: LID-ARCH-REV-015 §3.3 (Customer Profile Schema & Strict Security Rules)
  *
  * Verifies that client SDK operations (with customer credentials or unauthenticated)
@@ -16,12 +16,20 @@
  * - Default-deny catches all arbitrary unmapped collections and nested paths.
  * - Cross-user data harvesting and tampering across root and nested collections are blocked.
  * - Unauthenticated anonymous operations are blocked.
+ *
+ * Lifecycle & Isolation:
+ * - Standardized canonical port 8080 (matches firebase.json).
+ * - Explicit loopback binding to 127.0.0.1.
+ * - Explicit FIRESTORE_EMULATOR_HOST and FIREBASE_AUTH_EMULATOR_HOST endpoints.
+ * - Demo-only project ID prefix (demo-lanzar-rules-test) enforcing SDK offline behavior.
+ * - Reliable emulator process lifecycle: startup timeout termination, awaited process exit,
+ *   PID verification, and cleanup on success, failure, uncaught errors, and termination signals.
  */
 
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 
 module.paths.push(path.resolve(__dirname, 'auth-backend/node_modules'));
 module.paths.push(path.resolve(__dirname, '../node_modules'));
@@ -36,10 +44,13 @@ const PROJECT_ID = 'demo-lanzar-rules-test';
 const RULES_PATH = path.resolve(__dirname, '../firestore.rules');
 const EMULATOR_JAR = path.resolve(process.env.USERPROFILE, '.cache/firebase/emulators/cloud-firestore-emulator-v1.19.6.jar');
 const EMULATOR_HOST = '127.0.0.1';
-const EMULATOR_PORT = 8088;
+const EMULATOR_PORT = 8080; // Standardized canonical port (matches firebase.json)
 
 let passedTests = 0;
 let failedTests = 0;
+let emulatorProc = null;
+let emulatorClosed = false;
+let testFinishedNormally = false;
 
 function assertCheck(passed, description) {
   if (passed) {
@@ -51,40 +62,101 @@ function assertCheck(passed, description) {
   }
 }
 
-async function probeEmulatorHealth(host, port) {
-  return new Promise((resolve, reject) => {
-    const req = http.get(`http://${host}:${port}/`, (res) => {
-      resolve(res.statusCode);
-    });
-    req.on('error', reject);
-    req.setTimeout(2000, () => {
-      req.destroy();
-      reject(new Error('Emulator HTTP probe timed out'));
+async function probeEmulatorHealth(host, port, maxAttempts = 10, delayMs = 300) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const statusCode = await new Promise((resolve, reject) => {
+        const req = http.get(`http://${host}:${port}/`, (res) => {
+          resolve(res.statusCode);
+        });
+        req.on('error', reject);
+        req.setTimeout(1500, () => {
+          req.destroy();
+          reject(new Error('Probe timeout'));
+        });
+      });
+      return statusCode;
+    } catch (err) {
+      if (attempt === maxAttempts) throw err;
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+}
+
+/**
+ * Robustly terminates the spawned emulator process, waits for exit,
+ * and force-terminates if the process does not terminate within 3 seconds.
+ */
+async function terminateEmulator() {
+  if (!emulatorProc || emulatorClosed) {
+    return;
+  }
+  const pid = emulatorProc.pid;
+  console.log(`\n[EMULATOR] Terminating emulator process (PID ${pid})...`);
+
+  try {
+    emulatorProc.kill('SIGTERM');
+  } catch (_) {}
+
+  // Await process termination
+  const exitedGracefully = await new Promise((resolve) => {
+    if (emulatorClosed) return resolve(true);
+    const timer = setTimeout(() => resolve(false), 3000);
+    emulatorProc.once('close', () => {
+      clearTimeout(timer);
+      emulatorClosed = true;
+      resolve(true);
     });
   });
+
+  if (!exitedGracefully) {
+    console.warn(`[EMULATOR] Process PID ${pid} did not exit within 3s. Force terminating...`);
+    try {
+      if (process.platform === 'win32') {
+        execSync(`taskkill /F /PID ${pid} /T`, { stdio: 'ignore' });
+      } else {
+        emulatorProc.kill('SIGKILL');
+      }
+    } catch (_) {}
+  }
+
+  // Final verification that process is gone
+  try {
+    process.kill(pid, 0); // Throws ESRCH if process does not exist
+    console.warn(`[EMULATOR] Warning: PID ${pid} still reporting alive.`);
+  } catch (err) {
+    if (err.code === 'ESRCH') {
+      console.log(`  ✓ Emulator process PID ${pid} confirmed terminated.`);
+    }
+  }
+  emulatorClosed = true;
 }
 
 async function runRulesTestSuite() {
   console.log('================================================================');
   console.log('  LANZAR ID — Level 3 Firestore Security Rules Test Battery');
-  console.log('  Step 4.1 Audit & Full Security Coverage Completion');
+  console.log('  Step 4.2 Closeout & Final Verification');
   console.log(`  Target Project:     ${PROJECT_ID} [OFFLINE LOCAL EMULATOR]`);
   console.log(`  Rules File:         firestore.rules`);
-  console.log(`  Emulator Host:      ${EMULATOR_HOST}:${EMULATOR_PORT}`);
+  console.log(`  Emulator Host:      ${EMULATOR_HOST}:${EMULATOR_PORT} [PORT STANDARDIZED]`);
   console.log('  Cloud Access:       STRICTLY ZERO (demo- prefix enforces offline)');
   console.log('================================================================\n');
 
-  // Isolation Guard 1: Verify credentials environment
+  // Isolation Guard 1: Verify & strip credentials environment
   if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
     console.warn(`[ISOLATION] Stripping GOOGLE_APPLICATION_CREDENTIALS for rules testing.`);
     delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
   }
 
-  // Isolation Guard 2: Verify demo- prefix
+  // Isolation Guard 2: Require demo- prefix
   if (!PROJECT_ID.startsWith('demo-')) {
     console.error(`[FATAL] Rules test project ID must start with "demo-" to ensure offline mode: ${PROJECT_ID}`);
     process.exit(1);
   }
+
+  // Isolation Guard 3: Explicitly set emulator environment endpoints
+  process.env.FIRESTORE_EMULATOR_HOST = `${EMULATOR_HOST}:${EMULATOR_PORT}`;
+  process.env.FIREBASE_AUTH_EMULATOR_HOST = `${EMULATOR_HOST}:9099`;
 
   if (!fs.existsSync(RULES_PATH)) {
     console.error(`[FATAL] Rules file not found at: ${RULES_PATH}`);
@@ -100,47 +172,68 @@ async function runRulesTestSuite() {
 
   // Spawn local Firestore emulator process
   console.log(`[EMULATOR] Spawning local Firestore emulator on ${EMULATOR_HOST}:${EMULATOR_PORT}...`);
-  const emulatorProc = spawn('java', [
+  emulatorProc = spawn('java', [
     '-jar', EMULATOR_JAR,
     '--host', EMULATOR_HOST,
     '--port', String(EMULATOR_PORT),
     '--rules', RULES_PATH
   ], { stdio: 'pipe' });
 
-  // Clean shutdown handlers
-  let cleanedUp = false;
-  const cleanupProcess = () => {
-    if (!cleanedUp && emulatorProc) {
-      cleanedUp = true;
-      try {
-        emulatorProc.kill();
-      } catch (_) {}
+  // Monitor unexpected early process exit
+  emulatorProc.on('exit', (code, signal) => {
+    emulatorClosed = true;
+    if (!testFinishedNormally) {
+      console.error(`\n[FATAL] Local emulator process exited prematurely (code: ${code}, signal: ${signal})`);
     }
-  };
-
-  process.on('SIGINT', () => { cleanupProcess(); process.exit(1); });
-  process.on('SIGTERM', () => { cleanupProcess(); process.exit(1); });
-  process.on('uncaughtException', (err) => {
-    console.error('[UNCAUGHT EXCEPTION]', err);
-    cleanupProcess();
-    process.exit(1);
   });
 
-  // Await emulator startup
+  // Signal & exception hooks ensuring clean termination
+  let hookTriggered = false;
+  const emergencyTeardown = async (source, err) => {
+    if (hookTriggered) return;
+    hookTriggered = true;
+    console.error(`\n[CLEANUP] Triggered emergency teardown from ${source}${err ? ': ' + err.message : ''}`);
+    await terminateEmulator();
+    process.exit(1);
+  };
+
+  process.once('SIGINT', () => emergencyTeardown('SIGINT'));
+  process.once('SIGTERM', () => emergencyTeardown('SIGTERM'));
+  process.once('uncaughtException', (err) => emergencyTeardown('uncaughtException', err));
+
+  // Await emulator startup with reliable timeout handling
   await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Emulator startup timed out after 15s')), 15000);
+    let resolved = false;
+    const timeout = setTimeout(async () => {
+      if (!resolved) {
+        resolved = true;
+        console.error('[EMULATOR] Startup timed out after 15s. Terminating child process...');
+        await terminateEmulator();
+        reject(new Error('Emulator startup timed out after 15s'));
+      }
+    }, 15000);
+
     const checkLine = (data) => {
       const s = data.toString();
-      if (s.includes('Dev App Server is now running') || s.includes('Started WebSocket server')) {
-        clearTimeout(timeout);
-        resolve();
+      if (s.includes('Dev App Server is now running')) {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          resolve();
+        }
       }
     };
+
     emulatorProc.stdout.on('data', checkLine);
     emulatorProc.stderr.on('data', checkLine);
-    emulatorProc.on('error', (err) => {
-      clearTimeout(timeout);
-      reject(err);
+    emulatorProc.once('error', async (err) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        console.error(`[EMULATOR] Startup error: ${err.message}`);
+        await terminateEmulator();
+        reject(err);
+      }
     });
   });
 
@@ -149,12 +242,10 @@ async function runRulesTestSuite() {
     await probeEmulatorHealth(EMULATOR_HOST, EMULATOR_PORT);
     console.log(`  ✓ Local Firestore emulator active, probed, and responding on ${EMULATOR_HOST}:${EMULATOR_PORT}.\n`);
   } catch (err) {
-    console.error(`[FATAL] Emulator health probe failed: ${err.message}`);
-    cleanupProcess();
+    console.error(`[FATAL] Emulator health probe failed on ${EMULATOR_HOST}:${EMULATOR_PORT}: ${err.message}`);
+    await terminateEmulator();
     process.exit(1);
   }
-
-  process.env.FIRESTORE_EMULATOR_HOST = `${EMULATOR_HOST}:${EMULATOR_PORT}`;
 
   let testEnv = null;
 
@@ -715,14 +806,15 @@ async function runRulesTestSuite() {
       assertCheck(false, `RULE-C8: Failed with ${e.message}`);
     }
 
+    testFinishedNormally = true;
+
   } finally {
     // Teardown offline environment
     if (testEnv) {
-      await testEnv.cleanup();
+      await testEnv.cleanup().catch(() => {});
     }
-    // Shut down emulator process
-    console.log('\n[EMULATOR] Shutting down local Firestore emulator...');
-    cleanupProcess();
+    // Shut down emulator process with termination wait
+    await terminateEmulator();
   }
 
   console.log('\n================================================================');
@@ -733,7 +825,8 @@ async function runRulesTestSuite() {
   else process.exit(0);
 }
 
-runRulesTestSuite().catch(err => {
+runRulesTestSuite().catch(async (err) => {
   console.error('[FATAL] Rules test suite execution error:', err);
+  await terminateEmulator();
   process.exit(1);
 });
