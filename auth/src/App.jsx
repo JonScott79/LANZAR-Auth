@@ -3,6 +3,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { auth, signOutUser } from './firebase/auth.js'
 import Login from './pages/Login.jsx'
 import MyLanzarAccount from './components/MyLanzarAccount.jsx'
+import { getAuthApiUrl } from './config/env.js'
 import './App.css'
 
 const ALLOWED_DOMAINS = [
@@ -28,18 +29,31 @@ function App() {
   const params = new URLSearchParams(window.location.search)
   const clientId = params.get('client_id')
   const redirectUri = params.get('redirect_uri')
-  const forceAccountView = params.get('view') === 'account' || window.location.pathname.startsWith('/account') || window.location.hostname === 'id.lanzar.me'
+  const forceAccountView = params.get('view') === 'account' || window.location.pathname.startsWith('/account')
   const isOAuthFlow = Boolean(clientId && redirectUri && !forceAccountView)
 
   const executeAuthorizeFlow = async (firebaseUser, mfaProof = null) => {
     if (!isOAuthFlow) {
-      // In standalone ID management mode (id.lanzar.me), no redirect is needed
+      // In standalone account management mode, no OAuth redirect is needed
       return
     }
 
-    const state = params.get('state') || 'default_state'
-    const codeChallenge = params.get('code_challenge') || 'default_challenge'
-    const codeChallengeMethod = params.get('code_challenge_method') || 'S256'
+    const state = params.get('state') || ''
+    const codeChallenge = params.get('code_challenge')
+    const codeChallengeMethod = params.get('code_challenge_method')
+
+    // Strict PKCE verification at client boundary
+    if (!codeChallenge) {
+      console.error('[SECURITY] Missing required PKCE code_challenge')
+      setErrorMsg('Invalid OAuth Request: PKCE code_challenge parameter is required.')
+      return
+    }
+
+    if (codeChallengeMethod !== 'S256') {
+      console.error('[SECURITY] Invalid or unsupported PKCE code_challenge_method:', codeChallengeMethod)
+      setErrorMsg('Invalid OAuth Request: code_challenge_method must be explicitly S256.')
+      return
+    }
 
     if (!isAllowedRedirect(redirectUri)) {
       console.error('[SECURITY] Blocked redirect to unauthorized domain:', redirectUri)
@@ -51,7 +65,7 @@ function App() {
 
     try {
       const idToken = await firebaseUser.getIdToken(true)
-      const authBackendUrl = window.location.hostname === 'localhost' ? 'http://localhost:4001' : 'https://auth-api.lanzar.me'
+      const authBackendUrl = getAuthApiUrl()
 
       const response = await fetch(authBackendUrl + '/authorize', {
         method: 'POST',
@@ -88,7 +102,9 @@ function App() {
 
       const targetUrl = new URL(redirectUri)
       targetUrl.searchParams.set('code', data.code)
-      targetUrl.searchParams.set('state', data.state)
+      if (data.state) {
+        targetUrl.searchParams.set('state', data.state)
+      }
       window.location.replace(targetUrl.toString())
     } catch (e) {
       console.error('[AUTH] Failed to fetch authorization code:', e)
@@ -138,7 +154,7 @@ function App() {
             </a>
           </div>
         ) : user && !isOAuthFlow ? (
-          /* User is logged into id.lanzar.me (Central Account Hub) */
+          /* User is logged into LANZAR Central Account Portal */
           <MyLanzarAccount user={user} />
         ) : (
           /* User is logging in or in OAuth PKCE redirect flow */

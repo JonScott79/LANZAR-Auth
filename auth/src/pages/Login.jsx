@@ -5,6 +5,7 @@ import {
   signInWithGoogle, 
   registerWithEmail 
 } from '../firebase/auth.js'
+import { getAuthApiUrl } from '../config/env.js'
 import './Login.css'
 
 export default function Login({ 
@@ -38,7 +39,7 @@ export default function Login({
 
   const error = localError || globalAuthError
 
-  const authBackendUrl = window.location.hostname === 'localhost' ? 'http://localhost:4001' : 'https://auth-api.lanzar.me'
+  const authBackendUrl = getAuthApiUrl()
 
   // ==========================================
   // Sign In Handler

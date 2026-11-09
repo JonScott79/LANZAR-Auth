@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { signOutUser } from '../firebase/auth.js'
+import { getAuthApiUrl } from '../config/env.js'
 import './MyLanzarAccount.css'
 
 export default function MyLanzarAccount({ user, onClose = null }) {
@@ -36,7 +37,7 @@ export default function MyLanzarAccount({ user, onClose = null }) {
   // The Dispatch Newsletter State (Amendment #003)
   const [dispatchSubscribed, setDispatchSubscribed] = useState(false)
 
-  const authBackendUrl = window.location.hostname === 'localhost' ? 'http://localhost:4001' : 'https://auth-api.lanzar.me'
+  const authBackendUrl = getAuthApiUrl()
 
   const notify = (text, type = 'info') => {
     setMsg({ text, type })
