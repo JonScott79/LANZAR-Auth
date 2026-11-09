@@ -655,6 +655,52 @@ async function runRulesTestSuite() {
       assertCheck(false, `RULE-P21: Failed with ${e.message}`);
     }
 
+    try {
+      await assertSucceeds(aliceDb.doc(`users/${ALICE_UID}`).update({
+        bio: 'Senior Systems Architect and Mission Specialist'
+      }));
+      assertCheck(true, 'RULE-P22: Legitimate update of bio (<= 280 chars) is ALLOWED');
+    } catch (e) {
+      assertCheck(false, `RULE-P22: Failed with ${e.message}`);
+    }
+
+    try {
+      await assertSucceeds(aliceDb.doc(`users/${ALICE_UID}`).update({
+        bio: ''
+      }));
+      assertCheck(true, 'RULE-P23: Clearing bio with empty string is ALLOWED');
+    } catch (e) {
+      assertCheck(false, `RULE-P23: Failed with ${e.message}`);
+    }
+
+    try {
+      await assertFails(aliceDb.doc(`users/${ALICE_UID}`).update({
+        bio: 'B'.repeat(281)
+      }));
+      assertCheck(true, 'RULE-P24: bio exceeding 280 characters is strictly DENIED');
+    } catch (e) {
+      assertCheck(false, `RULE-P24: Failed with ${e.message}`);
+    }
+
+    try {
+      await assertFails(aliceDb.doc(`users/${ALICE_UID}`).update({
+        bio: 12345
+      }));
+      assertCheck(true, 'RULE-P25: Non-string bio is strictly DENIED');
+    } catch (e) {
+      assertCheck(false, `RULE-P25: Failed with ${e.message}`);
+    }
+
+    try {
+      await assertFails(aliceDb.doc(`users/${ALICE_UID}`).update({
+        bio: 'Valid bio update',
+        role: 'admin'
+      }));
+      assertCheck(true, 'RULE-P26: Partial document attack sneaking in role:admin alongside valid bio is DENIED');
+    } catch (e) {
+      assertCheck(false, `RULE-P26: Failed with ${e.message}`);
+    }
+
     // -------------------------------------------------------------
     // Test Category 4: Server-Only Collections & Security Metadata
     // -------------------------------------------------------------

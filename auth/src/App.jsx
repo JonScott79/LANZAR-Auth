@@ -105,6 +105,32 @@ function App() {
       if (data.state) {
         targetUrl.searchParams.set('state', data.state)
       }
+
+      // Check if executing inside an embedded iframe modal or an authentication popup
+      const isIframe = typeof window !== 'undefined' && window.parent && window.parent !== window
+      const isPopup = typeof window !== 'undefined' && window.opener && !window.opener.closed
+
+      if (isIframe || isPopup) {
+        const targetWindow = isIframe ? window.parent : window.opener
+        const clientOrigin = targetUrl.origin
+
+        targetWindow.postMessage({
+          type: 'lanzar:authenticated',
+          payload: {
+            code: data.code,
+            state: data.state || null
+          }
+        }, clientOrigin)
+
+        if (isPopup) {
+          setTimeout(() => {
+            try { window.close() } catch (e) {}
+          }, 300)
+        }
+        return
+      }
+
+      // Default top-level redirect flow
       window.location.replace(targetUrl.toString())
     } catch (e) {
       console.error('[AUTH] Failed to fetch authorization code:', e)

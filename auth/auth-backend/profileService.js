@@ -45,6 +45,11 @@ class ProfileService {
             statusReason: userData.statusReason || null,
             tokenVersion: userData.tokenVersion || 1,
             derivedBadges: Array.isArray(userData.derivedBadges) ? userData.derivedBadges : [],
+            notificationPreferences: userData.notificationPreferences || {
+                newsletter: false,
+                productUpdates: false,
+                securityAlerts: true
+            },
             mfa: {
                 enabled: Boolean(mfaData && mfaData.enabled),
                 totp: Boolean(mfaData && mfaData.totpSecret),
@@ -70,6 +75,18 @@ class ProfileService {
         }
         if (typeof updates.avatarUrl === 'string' && updates.avatarUrl.startsWith('https://')) {
             allowedUpdates.avatarUrl = updates.avatarUrl.trim().slice(0, 500);
+        }
+        if (updates.notificationPreferences && typeof updates.notificationPreferences === 'object' && !Array.isArray(updates.notificationPreferences)) {
+            const validPrefs = {};
+            const allowedPrefKeys = ['newsletter', 'productUpdates', 'securityAlerts'];
+            for (const key of allowedPrefKeys) {
+                if (typeof updates.notificationPreferences[key] === 'boolean') {
+                    validPrefs[key] = updates.notificationPreferences[key];
+                }
+            }
+            if (Object.keys(validPrefs).length > 0) {
+                allowedUpdates.notificationPreferences = validPrefs;
+            }
         }
 
         if (Object.keys(allowedUpdates).length === 0) {

@@ -14,6 +14,7 @@
 
 import {
   getAuth,
+  connectAuthEmulator,
   GoogleAuthProvider,
   signInWithPopup,
   signOut,
@@ -31,6 +32,25 @@ import app from './config.js'
 // ==========================
 
 const auth = getAuth(app)
+
+// Connect Auth Emulator in development if configured
+const appEnv = (import.meta.env.VITE_APP_ENV || (import.meta.env.DEV ? 'development' : 'production')).toLowerCase()
+const authEmuHost = import.meta.env.VITE_FIREBASE_AUTH_EMULATOR_HOST
+
+if (appEnv === 'development' || authEmuHost) {
+  const hostStr = authEmuHost || '127.0.0.1:9099'
+  const emuUrl = hostStr.startsWith('http://') || hostStr.startsWith('https://')
+    ? hostStr
+    : `http://${hostStr}`
+  try {
+    if (!auth.emulatorConfig) {
+      connectAuthEmulator(auth, emuUrl, { disableWarnings: true })
+      console.log(`[FIREBASE] Auth connected to local emulator at ${emuUrl}`)
+    }
+  } catch (e) {
+    // connectAuthEmulator throws if already connected; ignore in HMR
+  }
+}
 
 // ==========================
 // Google Provider

@@ -232,6 +232,85 @@ function sanitizeContinuationUrl(rawUrl, config = STAGING_CONFIG) {
   }
 }
 
+/**
+ * Initiates an authentication popup window using PKCE.
+ * Keeps the code_verifier strictly in the client application scope.
+ * Validates origin and source window on message receipt.
+ */
+async function openPopup(options = {}, config = STAGING_CONFIG) {
+  const pkce = await generatePkcePair();
+  const clientId = options.clientId || 'portal';
+  const redirectUri = options.redirectUri || (typeof window !== 'undefined' ? window.location.href : '');
+  const state = options.state || Math.random().toString(36).substring(2);
+
+  const authUrl = buildAuthorizeUrl({
+    clientId,
+    redirectUri,
+    codeChallenge: pkce.codeChallenge,
+    codeChallengeMethod: 'S256',
+    state,
+    mode: options.mode || 'login'
+  }, config);
+
+  const width = options.width || 480;
+  const height = options.height || 640;
+  const left = typeof window !== 'undefined' && window.screen ? Math.max(0, (window.screen.width - width) / 2) : 100;
+  const top = typeof window !== 'undefined' && window.screen ? Math.max(0, (window.screen.height - height) / 2) : 100;
+
+  const popupWindow = typeof window !== 'undefined' && typeof window.open === 'function'
+    ? window.open(authUrl, 'lanzar_auth_popup', `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=yes`)
+    : null;
+
+  return new Promise((resolve, reject) => {
+    let messageReceived = false;
+    let timer = null;
+
+    const cleanup = () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('message', onMessage);
+      }
+      if (timer) clearInterval(timer);
+    };
+
+    const onMessage = (event) => {
+      // 1. Strict Origin Verification
+      if (event.origin !== config.authHubUrl) return;
+      // 2. Strict Source Window Verification
+      if (popupWindow && event.source !== popupWindow) return;
+
+      const data = event.data;
+      if (data && data.type === 'lanzar:authenticated' && data.payload) {
+        messageReceived = true;
+        cleanup();
+        resolve({
+          code: data.payload.code,
+          state: data.payload.state,
+          codeVerifier: pkce.codeVerifier
+        });
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('message', onMessage);
+      timer = setInterval(() => {
+        if (popupWindow && popupWindow.closed && !messageReceived) {
+          cleanup();
+          reject(new Error('User closed authentication popup window.'));
+        }
+      }, 500);
+      if (timer && typeof timer.unref === 'function') {
+        timer.unref();
+      }
+    } else {
+      resolve({
+        authUrl,
+        codeVerifier: pkce.codeVerifier,
+        state
+      });
+    }
+  });
+}
+
 let template = null;
 if (typeof document !== 'undefined') {
   template = document.createElement('template');
@@ -437,10 +516,17 @@ class LanzarAuthModal extends BaseElement {
   }
 
   _onMessage(event) {
-    // Strict Origin Verification
+    // 1. Strict Origin Verification
     if (event.origin !== this._config.authHubUrl) {
       return;
     }
+
+    // 2. Strict Source Window Verification: ensure message originates from our iframe
+    const frame = this.shadowRoot?.getElementById('authFrame');
+    if (frame && frame.contentWindow && event.source !== frame.contentWindow) {
+      return;
+    }
+
     const data = event.data;
     if (!data || typeof data !== 'object') return;
 
@@ -491,6 +577,10 @@ class LanzarAuthModal extends BaseElement {
     return exchangeCodeForSession(options, config);
   }
 
+  static openPopup(options, config) {
+    return openPopup(options, config);
+  }
+
   static get config() {
     return STAGING_CONFIG;
   }
@@ -505,6 +595,7 @@ const LanzarAuth = {
   buildAuthorizeUrl,
   exchangeCodeForSession,
   sanitizeContinuationUrl,
+  openPopup,
   configs: {
     staging: STAGING_CONFIG,
     production: PRODUCTION_CONFIG,
@@ -532,6 +623,7 @@ export {
   buildAuthorizeUrl,
   exchangeCodeForSession,
   sanitizeContinuationUrl, 
+  openPopup,
   STAGING_CONFIG,
   PRODUCTION_CONFIG,
   DEVELOPMENT_CONFIG

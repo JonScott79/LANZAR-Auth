@@ -1,5 +1,6 @@
 // clients.js
 // Authorized OAuth 2.0 / PKCE client registry for LANZAR ecosystem
+// Approved clients: portal, tickets, threadline, ai (LID-ARCH-REV-015 / Phase E.1)
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -16,32 +17,6 @@ const clients = {
             'http://localhost:8000/',
             'https://portal.lanzar.me',
             'https://portal.lanzar.me/'
-        ],
-        enabled: true
-    },
-    'id': {
-        id: 'id',
-        name: 'LANZAR ID Central Account Hub',
-        redirectUris: [
-            'http://localhost:5177',
-            'http://localhost:5177/',
-            'http://localhost:3000',
-            'http://localhost:3000/',
-            'https://id.lanzar.me',
-            'https://id.lanzar.me/'
-        ],
-        enabled: true
-    },
-    'mothership': {
-        id: 'mothership',
-        name: 'LANZAR Mothership Gateway',
-        redirectUris: [
-            'http://localhost:5178',
-            'http://localhost:5178/',
-            'http://localhost:8888',
-            'http://localhost:8888/',
-            'https://lanzar.me',
-            'https://lanzar.me/'
         ],
         enabled: true
     },
@@ -70,17 +45,6 @@ const clients = {
             'https://threadline.lanzar.me/',
             'https://threadline-production-1c28.up.railway.app',
             'https://threadline-production-1c28.up.railway.app/'
-        ],
-        enabled: true
-    },
-    'pythos': {
-        id: 'pythos',
-        name: 'Pythos AI Autonomous Tutor',
-        redirectUris: [
-            'http://localhost:3005',
-            'http://localhost:3005/',
-            'https://pythos.lanzar.me',
-            'https://pythos.lanzar.me/'
         ],
         enabled: true
     },

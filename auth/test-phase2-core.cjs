@@ -234,6 +234,27 @@ async function runPhase2Tests() {
         assert(!profileAfterTamper.derivedBadges.includes('hacked_badge_attempt'), 'Derived badges anti-tampering: unauthorized badge injected by PUT was stripped');
         assert(profileAfterTamper.derivedBadges.length === 2, 'Legitimate authoritative badges preserved intact');
 
+        // Verify notificationPreferences handling and privilege escalation resistance
+        await profileService.updateUserProfile(testUid, {
+            bio: 'Senior Commander & Flight Director',
+            notificationPreferences: {
+                newsletter: true,
+                productUpdates: true,
+                securityAlerts: false,
+                invalidPrivilegeKey: true
+            },
+            role: 'superadmin',
+            status: 'admin_bypass'
+        });
+
+        const profileAfterPrefs = await profileService.getUserProfile(testUid);
+        assert(profileAfterPrefs.bio === 'Senior Commander & Flight Director', 'Valid bio updated');
+        assert(profileAfterPrefs.notificationPreferences.newsletter === true, 'newsletter preference updated');
+        assert(profileAfterPrefs.notificationPreferences.productUpdates === true, 'productUpdates preference updated');
+        assert(profileAfterPrefs.notificationPreferences.securityAlerts === false, 'securityAlerts preference updated');
+        assert(profileAfterPrefs.notificationPreferences.invalidPrivilegeKey === undefined, 'invalid notificationPreference key stripped');
+        assert(profileAfterPrefs.role === 'customer', 'role privilege escalation strictly stripped');
+
         // Revoke Pythos Founder
         const revokeResult = await founderService.revokeFounderDesignation({
             uid: testUid,
