@@ -1,0 +1,533 @@
+/*
+    error-page.css
+
+    Master styling for LANZAR Atomic Age site-wide error pages (400, 401, 403, 404, 418, 500, 502, 503, 504).
+    Features retro-futuristic character sign-holder layouts, neon marquees, and cockpit HUDs.
+*/
+
+:root {
+  --cockpit-black: #070d14;
+  --cockpit-navy: #0d1722;
+  --cockpit-panel: #132230;
+  --cockpit-panel-elevated: #182a3c;
+  --bezel-border: #22374c;
+  
+  --retro-teal: #2a728f;
+  --retro-teal-bright: #38bdf8;
+  --rocket-orange: #f46b45;
+  --rocket-orange-bright: #ff7d57;
+  --atomic-gold: #e2b84d;
+  --atomic-gold-bright: #ffd466;
+
+  --cream: #fbf7ee;
+  --parchment: #e6dfcf;
+  --text-muted: #8899a6;
+  --text-dim: #5c6f7e;
+
+  /* Character Accent Themes */
+  --theme-mina: #ff4d6d;
+  --theme-mina-glow: rgba(255, 77, 109, 0.4);
+  --theme-pete: #38bdf8;
+  --theme-pete-glow: rgba(56, 189, 248, 0.4);
+  --theme-rusty: #f46b45;
+  --theme-rusty-glow: rgba(244, 107, 69, 0.45);
+  --theme-penny: #fb923c;
+  --theme-penny-glow: rgba(251, 146, 60, 0.4);
+  --theme-stella: #e2b84d;
+  --theme-stella-glow: rgba(226, 184, 77, 0.4);
+
+  --font-heading: 'Space Grotesk', system-ui, sans-serif;
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-body: 'Inter', -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  min-height: 100%;
+  background-color: var(--cockpit-black);
+  color: var(--cream);
+  font-family: var(--font-body);
+  overflow-x: hidden;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background-image: 
+    radial-gradient(circle at 50% 20%, rgba(42, 114, 143, 0.18) 0%, transparent 65%),
+    radial-gradient(circle at 85% 80%, rgba(244, 107, 69, 0.12) 0%, transparent 55%),
+    linear-gradient(to right, rgba(42, 114, 143, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(42, 114, 143, 0.08) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px;
+  position: relative;
+}
+
+/* Ambient CRT scanline overlay */
+.crt-scanlines {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.22) 50%);
+  background-size: 100% 4px;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0.35;
+}
+
+/* Page Frame */
+.error-viewport {
+  position: relative;
+  z-index: 2;
+  max-width: 1200px;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 28px;
+}
+
+/* Header */
+.error-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 24px;
+  background: rgba(13, 23, 34, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--bezel-border);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.brand-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  transition: transform 0.2s ease;
+}
+
+.brand-link:hover {
+  transform: translateY(-1px);
+}
+
+.brand-logo {
+  height: 38px;
+  width: auto;
+  filter: drop-shadow(0 2px 8px rgba(56, 189, 248, 0.3));
+}
+
+.header-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(10, 18, 26, 0.85);
+  border: 1px solid rgba(244, 107, 69, 0.4);
+  border-radius: 9999px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--rocket-orange-bright);
+}
+
+.pulse-red {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff4d6d;
+  box-shadow: 0 0 10px #ff4d6d;
+  animation: pulseBeacon 1.4s infinite ease-in-out;
+}
+
+@keyframes pulseBeacon {
+  0%, 100% { opacity: 0.4; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.25); }
+}
+
+/* =====================================================================
+   MAIN SIGN-HOLDER STAGE
+===================================================================== */
+.stage-container {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: center;
+  gap: 32px;
+  position: relative;
+  margin: auto 0;
+  padding: 20px 0;
+}
+
+@media (min-width: 900px) {
+  .stage-container {
+    grid-template-columns: 420px 1fr;
+    gap: 40px;
+  }
+}
+
+/* Character Podium / Pose */
+.character-podium {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.character-halo {
+  position: absolute;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  filter: blur(50px);
+  opacity: 0.45;
+  z-index: 1;
+  top: 15%;
+  pointer-events: none;
+}
+
+.character-art-wrapper {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 380px;
+  height: 480px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: visible;
+}
+
+.character-img {
+  max-width: 100%;
+  max-height: 480px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 15px 35px rgba(0, 0, 0, 0.7));
+  transition: transform 0.3s ease;
+}
+
+.character-img:hover {
+  transform: scale(1.02) rotate(-1deg);
+}
+
+/* Mechanical Grip Hand/Clamps that overlap the sign */
+.sign-clamp-attachment {
+  position: absolute;
+  right: -14px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 120px;
+  pointer-events: none;
+}
+
+@media (max-width: 899px) {
+  .sign-clamp-attachment {
+    display: none;
+  }
+}
+
+.clamp-bracket {
+  width: 28px;
+  height: 44px;
+  background: linear-gradient(135deg, #475f78 0%, #1e2e3d 100%);
+  border: 2px solid #6b88a8;
+  border-radius: 6px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+  position: relative;
+}
+
+.clamp-bracket::after {
+  content: '';
+  position: absolute;
+  top: 18px;
+  left: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--atomic-gold);
+  box-shadow: 0 0 6px var(--atomic-gold);
+}
+
+/* =====================================================================
+   THE HELD SIGN BOARD
+===================================================================== */
+.held-sign-board {
+  position: relative;
+  z-index: 3;
+  background: linear-gradient(175deg, rgba(20, 36, 52, 0.96) 0%, rgba(13, 24, 35, 0.98) 100%);
+  border: 3px solid var(--accent-theme, var(--rocket-orange));
+  border-radius: 20px;
+  padding: 40px 36px;
+  box-shadow: 
+    0 0 35px var(--accent-glow, rgba(244, 107, 69, 0.3)),
+    0 24px 60px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Hanging chains from top */
+.sign-chains {
+  position: absolute;
+  top: -16px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-around;
+  pointer-events: none;
+}
+
+.chain-link {
+  width: 14px;
+  height: 28px;
+  border: 3px solid #6b88a8;
+  border-radius: 10px;
+  background: #101c27;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+/* Corner Screws */
+.screw {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #3a536b;
+  border: 1px solid #1c2b38;
+  border-radius: 50%;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.6);
+}
+.screw::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 1px;
+  width: 6px;
+  height: 1px;
+  background: #8aa4c2;
+}
+.screw-tl { top: 12px; left: 12px; }
+.screw-tr { top: 12px; right: 12px; }
+.screw-bl { bottom: 12px; left: 12px; }
+.screw-br { bottom: 12px; right: 12px; }
+
+/* Top Marquee Header */
+.sign-marquee-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.15);
+  padding-bottom: 14px;
+}
+
+.sign-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: var(--accent-theme, var(--rocket-orange));
+  color: #ffffff;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.sign-telemetry {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.sign-telemetry span {
+  color: var(--retro-teal-bright);
+}
+
+/* Enormous Error Code */
+.error-code-marquee {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.error-code-num {
+  font-family: var(--font-heading);
+  font-size: clamp(3.8rem, 10vw, 6.8rem);
+  font-weight: 800;
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  color: #ffffff;
+  text-shadow: 
+    0 0 25px var(--accent-glow, rgba(244, 107, 69, 0.5)),
+    0 4px 10px rgba(0, 0, 0, 0.8);
+}
+
+.error-code-label {
+  font-family: var(--font-heading);
+  font-size: clamp(1.4rem, 3.5vw, 2.2rem);
+  font-weight: 700;
+  color: var(--parchment);
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+/* Character Speech Bubble Transmission */
+.character-speech-bubble {
+  position: relative;
+  background: rgba(10, 18, 27, 0.85);
+  border: 1px solid var(--bezel-border);
+  border-left: 4px solid var(--accent-theme, var(--rocket-orange));
+  border-radius: 12px;
+  padding: 18px 22px;
+  font-size: 1.05rem;
+  color: #e2ecf5;
+  line-height: 1.6;
+}
+
+.speech-speaker-tag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-theme, var(--rocket-orange));
+  margin-bottom: 6px;
+}
+
+.speech-quote {
+  font-style: italic;
+  font-weight: 400;
+}
+
+.speech-quote strong {
+  font-style: normal;
+  color: #ffffff;
+}
+
+/* Action Button Suite */
+.sign-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 6px;
+}
+
+.btn-error-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: linear-gradient(135deg, var(--accent-theme, var(--rocket-orange)) 0%, #c43818 100%);
+  color: #ffffff;
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  font-weight: 700;
+  text-decoration: none;
+  padding: 13px 24px;
+  border-radius: 8px;
+  box-shadow: 0 4px 18px var(--accent-glow, rgba(244, 107, 69, 0.4));
+  transition: all 0.25s ease;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.btn-error-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 25px var(--accent-glow, rgba(244, 107, 69, 0.6));
+  filter: brightness(1.1);
+}
+
+.btn-error-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(13, 23, 34, 0.85);
+  border: 1px solid var(--bezel-border);
+  color: var(--cream);
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+  padding: 13px 22px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.btn-error-secondary:hover {
+  background: rgba(22, 38, 54, 0.95);
+  border-color: var(--retro-teal-bright);
+  color: #ffffff;
+  transform: translateY(-2px);
+}
+
+.btn-error-pythos {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(226, 184, 77, 0.12);
+  border: 1px solid var(--atomic-gold);
+  color: var(--atomic-gold-bright);
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-decoration: none;
+  padding: 13px 18px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.btn-error-pythos:hover {
+  background: var(--atomic-gold);
+  color: var(--cockpit-black);
+  transform: translateY(-2px);
+}
+
+/* Footer */
+.error-footer {
+  border-top: 1px solid var(--bezel-border);
+  padding-top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
+.error-footer a {
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.error-footer a:hover {
+  color: var(--cream);
+}
+
+.error-footer-links {
+  display: flex;
+  gap: 16px;
+  list-style: none;
+}

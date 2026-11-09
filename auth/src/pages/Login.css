@@ -1,0 +1,407 @@
+.login-panel {
+  background: white;
+  border: 2px solid var(--deep-navy);
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+  max-width: 340px;
+  margin: 1rem auto;
+  box-shadow: 6px 6px 0px var(--rocket-orange);
+}
+
+.login-title {
+  font-family: var(--font-heading);
+  color: var(--deep-navy);
+  font-size: 1.5rem;
+  margin-top: 0;
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  border-bottom: 4px solid var(--retro-teal);
+  padding-bottom: 0.5rem;
+}
+
+.login-desc {
+  font-family: var(--font-body);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+  line-height: 1.6;
+}
+
+.login-form .form-group {
+  margin-bottom: 1rem;
+}
+
+.label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.login-form label {
+  display: block;
+  font-family: var(--font-heading);
+  color: var(--rocket-orange);
+  font-weight: 800;
+  margin-bottom: 0.25rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+}
+
+.login-form input {
+  width: 100%;
+  padding: 0.6rem;
+  border: 2px solid var(--deep-navy);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  background: var(--bg-primary);
+  box-sizing: border-box;
+}
+
+.login-form input:focus {
+  outline: none;
+  border-color: var(--rocket-orange);
+  background: white;
+}
+
+.text-link {
+  background: none;
+  border: none;
+  color: var(--retro-teal);
+  font-family: var(--font-code);
+  font-weight: bold;
+  cursor: pointer;
+  padding: 0;
+}
+
+.text-link:hover {
+  text-decoration: underline;
+  color: var(--deep-navy);
+}
+
+.primary-btn {
+  width: 100%;
+  background: var(--rocket-orange);
+  color: white;
+  border: 2px solid var(--deep-navy);
+  border-radius: var(--radius-pill);
+  padding: 0.6rem 1rem;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-transform: uppercase;
+  box-shadow: 4px 4px 0px var(--deep-navy);
+  transition: all 0.1s;
+}
+
+.primary-btn:hover:not(:disabled) {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0px var(--deep-navy);
+}
+
+.primary-btn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0px var(--deep-navy);
+}
+
+.primary-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.form-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  align-items: center;
+  margin-top: 1rem;
+}
+
+.error-msg {
+  color: #c2185b;
+  background: #fce4ec;
+  padding: 0.6rem;
+  border: 2px solid #c2185b;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-code);
+  font-size: 0.85rem;
+  margin-top: 0.75rem;
+  font-weight: bold;
+}
+
+.success-msg {
+  color: #2e7d32;
+  background: #e8f5e9;
+  padding: 0.6rem;
+  border: 2px solid #2e7d32;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-code);
+  font-size: 0.85rem;
+  margin-top: 0.75rem;
+  font-weight: bold;
+}
+
+/* ==========================================================
+   Google Sign-In Button
+   ========================================================== */
+
+.google-signin-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 38px;
+  margin-top: 0.75rem;
+  padding: 6px 12px;
+  border: 2px solid var(--retro-teal);
+  border-radius: var(--radius-pill);
+  background: var(--bg-secondary);
+  color: var(--deep-navy);
+  font-family: var(--font-heading);
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  box-shadow: 0 4px 0 rgba(42, 114, 143, 0.12);
+  transition: all var(--speed-fast);
+}
+
+.google-signin-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  background: var(--retro-teal);
+  color: var(--text-light);
+  border-color: var(--retro-teal);
+  box-shadow: 0 6px 0 rgba(42, 114, 143, 0.18), var(--shadow-small);
+}
+
+.google-signin-button:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 0 rgba(42, 114, 143, 0.12);
+}
+
+.google-signin-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.google-icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.signin-divider {
+  display: flex;
+  align-items: center;
+  margin: 1.25rem 0 0.75rem 0;
+}
+
+.signin-divider-line {
+  flex: 1;
+  height: 2px;
+  background: var(--soft-gray);
+  opacity: 0.3;
+}
+
+.signin-divider-text {
+  padding: 0 15px;
+  font-family: var(--font-code);
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--soft-gray);
+}
+
+/* ==========================================================
+   Tab Navigation & Multi-Mode Forms
+   ========================================================== */
+
+.auth-tab-bar {
+  display: flex;
+  border-bottom: 2px solid var(--deep-navy);
+  margin-bottom: 1.25rem;
+  gap: 0.5rem;
+}
+
+.auth-tab-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 0.5rem 0.25rem;
+  font-family: var(--font-heading);
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--soft-gray);
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  text-transform: uppercase;
+  transition: all 0.15s ease-in-out;
+}
+
+.auth-tab-btn.active {
+  color: var(--deep-navy);
+  border-bottom-color: var(--rocket-orange);
+}
+
+.auth-tab-btn:hover:not(.active) {
+  color: var(--retro-teal);
+}
+
+/* ==========================================================
+   Checkbox Container (Newsletter Opt-In)
+   ========================================================== */
+
+.checkbox-container {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin: 1rem 0;
+  padding: 0.5rem;
+  background: var(--bg-primary);
+  border: 1px dashed var(--retro-teal);
+  border-radius: var(--radius-sm);
+}
+
+.checkbox-container input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  cursor: pointer;
+  accent-color: var(--rocket-orange);
+  flex-shrink: 0;
+}
+
+.checkbox-label {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--deep-navy);
+  cursor: pointer;
+  text-transform: none !important;
+  font-weight: 500 !important;
+}
+
+/* ==========================================================
+   MFA Challenge & Enrollment Elements
+   ========================================================== */
+
+.mfa-panel {
+  max-width: 420px;
+}
+
+.secret-display-box {
+  background: #f4f6f8;
+  border: 2px dashed var(--retro-teal);
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.secret-label {
+  display: block;
+  font-family: var(--font-heading);
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--retro-teal);
+  margin-bottom: 0.25rem;
+}
+
+.secret-code {
+  display: inline-block;
+  font-family: var(--font-code);
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--deep-navy);
+  letter-spacing: 2px;
+  word-break: break-all;
+}
+
+.secret-hint {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 0.25rem;
+  margin-bottom: 0;
+}
+
+.recovery-codes-box {
+  text-align: center;
+}
+
+.recovery-title {
+  font-family: var(--font-heading);
+  color: var(--deep-navy);
+  margin: 1rem 0 0.25rem 0;
+  font-size: 1rem;
+}
+
+.recovery-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+}
+
+.recovery-code-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.recovery-code-pill {
+  background: #eceff1;
+  padding: 0.4rem 0.6rem;
+  font-family: var(--font-code);
+  font-weight: bold;
+  font-size: 0.85rem;
+  border: 1px solid #cfd8dc;
+  border-radius: var(--radius-sm);
+  color: var(--deep-navy);
+}
+
+
+/* The Dispatch Newsletter Promo Box (Amendment #003) */
+.dispatch-promo-box {
+  background: rgba(255, 215, 0, 0.05);
+  border: 1px solid rgba(255, 215, 0, 0.25);
+  border-radius: var(--radius-md);
+  padding: 1.15rem;
+  margin: 1.25rem 0;
+  text-align: left;
+}
+
+.dispatch-badge {
+  display: inline-block;
+  font-family: var(--font-code);
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--color-gold, #ffd700);
+  background: rgba(255, 215, 0, 0.12);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-bottom: 0.4rem;
+}
+
+.dispatch-heading {
+  margin: 0 0 0.35rem 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: var(--color-gold, #ffd700);
+}
+
+.dispatch-tagline {
+  margin: 0 0 0.85rem 0;
+  font-size: 0.82rem;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+.dispatch-checkbox-row {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 215, 0, 0.15);
+}

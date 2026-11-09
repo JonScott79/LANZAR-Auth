@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    stella-dialog.svg
+
+    LANZAR Support Tickets Atomic Age speech balloon.
+
+    Responsibilities
+
+    - Provide the organic speech balloon silhouette
+    - Point toward Stella's face
+    - Provide integrated Atomic Age decorative details
+    - Remain independent from dialogue text
+-->
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" fill="none">
+    <defs>
+        <filter id="dialogue-shadow" x="-10%" y="-20%" width="130%" height="145%">
+            <feDropShadow
+                dx="0"
+                dy="9"
+                stdDeviation="8"
+                flood-color="#20303c"
+                flood-opacity="0.16"
+            />
+        </filter>
+    </defs>
+
+    <!-- ======================================================
+         Main Speech Balloon
+
+         Broad mid-century balloon with a longer, shallower
+         tail positioned high on the right toward Stella's face.
+         ====================================================== -->
+
+    <path
+        d="
+            M 72 200
+            C 72 104, 174 38, 350 30
+            C 555 20, 795 25, 900 48
+            C 958 61, 984 87, 992 120
+
+            L 998 143
+            L 1180 165
+            L 998 190
+            L 994 222
+
+            C 982 300, 940 334, 885 352
+            C 780 378, 555 380, 350 370
+            C 174 362, 72 296, 72 200
+            Z
+        "
+        fill="#fffdf8"
+        stroke="#2a728f"
+        stroke-width="13"
+        stroke-linejoin="round"
+        filter="url(#dialogue-shadow)"
+    />
+
+    <!-- ======================================================
+         Inner Hand-Drawn Contour
+         ====================================================== -->
+
+    <path
+        d="
+            M 90 198
+            C 96 120, 190 58, 352 50
+            C 548 41, 775 44, 885 66
+            C 935 76, 958 96, 967 128
+        "
+        stroke="#2a728f"
+        stroke-width="5"
+        stroke-linecap="round"
+    />
+
+    <path
+        d="
+            M 970 221
+            C 960 287, 925 319, 875 335
+            C 765 357, 548 360, 352 351
+            C 188 343, 96 284, 90 202
+        "
+        stroke="#2a728f"
+        stroke-width="5"
+        stroke-linecap="round"
+        opacity="0.55"
+    />
+
+    <!-- ======================================================
+         Atomic Age Stars
+         ====================================================== -->
+
+    <!-- Large left star, kept outside the HTML text area -->
+    <path
+        d="
+            M 116 116
+            L 122 151
+            L 140 134
+            L 128 158
+            L 154 168
+            L 128 174
+            L 116 211
+            L 111 174
+            L 86 168
+            L 110 158
+            L 96 134
+            L 113 151
+            Z
+        "
+        fill="#f46b45"
+    />
+
+    <!-- Small teal sparkle -->
+    <path
+        d="
+            M 80 185
+            L 84 202
+            L 101 206
+            L 84 211
+            L 80 229
+            L 76 211
+            L 59 206
+            L 76 202
+            Z
+        "
+        fill="#2a728f"
+    />
+
+    <!-- Orange star near the right side -->
+    <path
+        d="
+            M 835 105
+            L 840 137
+            L 856 121
+            L 845 143
+            L 869 151
+            L 845 157
+            L 835 190
+            L 830 157
+            L 806 151
+            L 829 143
+            L 816 121
+            L 831 137
+            Z
+        "
+        fill="#f46b45"
+    />
+
+    <!-- ======================================================
+         Hand-Drawn Accent Beneath The Question
+         ====================================================== -->
+
+    <path
+        d="M 505 314 C 590 294, 690 289, 790 302"
+        stroke="#f46b45"
+        stroke-width="5"
+        stroke-linecap="round"
+    />
+</svg>

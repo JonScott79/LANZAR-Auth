@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Error Telemetry & Infrastructure Diagnostic | LANZAR IT</title>
+  <meta name="description" content="Explore LANZAR IT's full suite of error pages featuring Rusty, Pete, Stella, Penny, and Mina." />
+  <link rel="icon" type="image/svg+xml" href="images/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/error-page.css" />
+  <style>
+    .controls-deck {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      padding: 16px;
+      background: rgba(13, 23, 34, 0.85);
+      border: 1px solid var(--bezel-border);
+      border-radius: 14px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .btn-code-tab {
+      background: rgba(19, 34, 48, 0.9);
+      border: 1px solid var(--bezel-border);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      font-weight: 700;
+      padding: 8px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-code-tab:hover {
+      background: rgba(30, 52, 74, 0.95);
+      color: #ffffff;
+      transform: translateY(-2px);
+    }
+
+    .btn-code-tab.active {
+      background: var(--active-theme, var(--theme-rusty));
+      border-color: #ffffff;
+      color: #ffffff;
+      box-shadow: 0 0 16px var(--active-glow, var(--theme-rusty-glow));
+    }
+
+    .direct-link-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .direct-link-bar a {
+      color: var(--retro-teal-bright);
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="crt-scanlines" aria-hidden="true"></div>
+
+  <div class="error-viewport">
+    <header class="error-header" role="banner">
+      <a href="index.html" class="brand-link" title="LANZAR Auth Hub">
+        <img src="images/logo-support.svg" alt="LANZAR IT" class="brand-logo" style="height: 38px;" />
+      </a>
+      <div class="header-status-badge">
+        <span class="pulse-red" aria-hidden="true"></span>
+        <span id="headerProtocol">DIAGNOSTIC SIMULATOR // ALL CODES</span>
+      </div>
+    </header>
+
+    <!-- Selector Deck -->
+    <nav class="controls-deck" aria-label="Error Code Switcher">
+      <button class="btn-code-tab active" data-code="404" type="button">
+        <span>404: Rusty</span>
+      </button>
+      <button class="btn-code-tab" data-code="500" type="button">
+        <span>500: Rusty</span>
+      </button>
+      <button class="btn-code-tab" data-code="403" type="button">
+        <span>403: Pete</span>
+      </button>
+      <button class="btn-code-tab" data-code="401" type="button">
+        <span>401: Stella</span>
+      </button>
+      <button class="btn-code-tab" data-code="400" type="button">
+        <span>400: Pete</span>
+      </button>
+      <button class="btn-code-tab" data-code="502" type="button">
+        <span>502: Penny</span>
+      </button>
+      <button class="btn-code-tab" data-code="503" type="button">
+        <span>503: Rusty</span>
+      </button>
+      <button class="btn-code-tab" data-code="504" type="button">
+        <span>504: Penny</span>
+      </button>
+      <button class="btn-code-tab" data-code="418" type="button">
+        <span>418: Mina</span>
+      </button>
+    </nav>
+
+    <!-- Interactive Stage -->
+    <main class="stage-container" id="stageContainer" role="main">
+      <div class="character-podium">
+        <div class="character-halo" id="charHalo" style="background: radial-gradient(circle, var(--theme-rusty) 0%, transparent 70%);"></div>
+        <div class="character-art-wrapper">
+          <img id="charImg" src="images/characters/Rusty/rusty-001.png" alt="Rusty holding error sign" class="character-img" />
+          <div class="sign-clamp-attachment" aria-hidden="true">
+            <div class="clamp-bracket"></div>
+            <div class="clamp-bracket"></div>
+          </div>
+        </div>
+      </div>
+
+      <article class="held-sign-board" id="heldSignBoard" aria-label="Error Notice">
+        <div class="sign-chains" aria-hidden="true">
+          <div class="chain-link"></div>
+          <div class="chain-link"></div>
+        </div>
+        <div class="screw screw-tl" aria-hidden="true"></div>
+        <div class="screw screw-tr" aria-hidden="true"></div>
+        <div class="screw screw-bl" aria-hidden="true"></div>
+        <div class="screw screw-br" aria-hidden="true"></div>
+
+        <div class="sign-marquee-top">
+          <span class="sign-badge" id="signBadge">⚠️ PATCH PANEL DISCONNECTED ⚠️</span>
+          <div class="sign-telemetry" id="signTelemetry">PORT: <span>UNTERMINATED_CAT6</span></div>
+        </div>
+
+        <div class="error-code-marquee">
+          <div class="error-code-num" id="signCode">404</div>
+          <div class="error-code-label" id="signLabel">Network Port Unreachable</div>
+        </div>
+
+        <div class="character-speech-bubble">
+          <div class="speech-speaker-tag" id="speakerTag">
+            <span>🤖 RUSTY - INFRASTRUCTURE TECHNICIAN:</span>
+          </div>
+          <p class="speech-quote" id="speechText">
+            "CLANK! BZZT! I traced the Ethernet drop from the server rack all the way down the conduit, but Port 404 isn't patched in! Looks like somebody unplugged the cable or moved the switch. Don't worry—I've got my cable tester and crimper ready. Let's patch you back into the main network!"
+          </p>
+        </div>
+
+        <div class="sign-actions">
+          <a href="index.html" class="btn-error-primary" id="btnActionPrimary">
+            <span>🖥️ Return to IT Command</span>
+          </a>
+          <a href="404.html" class="btn-error-secondary" id="btnDedicatedLink">
+            <span>🔗 Open Dedicated Page</span>
+          </a>
+          <a href="https://pythos.lanzar.me/" class="btn-error-pythos" title="Launch Pythos Socratic Math & Physics Tutor">
+            <span>📐 Go to Pythos</span>
+          </a>
+        </div>
+      </article>
+    </main>
+
+    <div class="direct-link-bar">
+      <span>Dedicated Error Endpoint:</span>
+      <a href="404.html" id="dedicatedAnchor">auth.lanzar.me/404.html</a>
+    </div>
+
+    <footer class="error-footer" role="contentinfo">
+      <div>&copy; 2026 LANZAR Auth Hub. Hudson Valley Business & Enterprise Infrastructure.</div>
+      <ul class="error-footer-links">
+        <li><a href="index.html">IT Services</a></li>
+        <li><a href="https://lanzar.me/">Mothership</a></li>
+        <li><a href="https://pythos.lanzar.me/">Pythos</a></li>
+        <li><a href="errors.html">All Error Codes</a></li>
+      </ul>
+    </footer>
+  </div>
+
+  <script>
+    const ERRORS = {
+      404: {
+        code: "404",
+        label: "Network Port Unreachable",
+        badge: "⚠️ PATCH PANEL DISCONNECTED ⚠️",
+        telemetry: "PORT: <span>UNTERMINATED_CAT6</span>",
+        speaker: "🤖 RUSTY - INFRASTRUCTURE TECHNICIAN:",
+        quote: '"CLANK! BZZT! I traced the Ethernet drop from the server rack all the way down the conduit, but Port 404 isn\'t patched in! Looks like somebody unplugged the cable or moved the switch. Don\'t worry—I\'ve got my cable tester and crimper ready. Let\'s patch you back into the main network!"',
+        characterImg: "images/characters/Rusty/rusty-001.png",
+        theme: "var(--theme-rusty)",
+        glow: "var(--theme-rusty-glow)",
+        file: "404.html"
+      },
+      500: {
+        code: "500",
+        label: "Internal Server Anomaly",
+        badge: "⚠️ RACK TEMPERATURE ANOMALY ⚠️",
+        telemetry: "DATACENTER: <span>CHILLER_CYCLE</span>",
+        speaker: "🤖 RUSTY - INFRASTRUCTURE TECHNICIAN:",
+        quote: '"WHIRRR! The thermal sensors on Server Rack 4 triggered a failsafe shutdown! I just cleared out the dust filters, inspected the redundant power supply, and restarted the blower fans. Give the node 30 seconds to finish its POST routine and try reloading!"',
+        characterImg: "images/characters/Rusty/rusty-001.png",
+        theme: "var(--theme-rusty)",
+        glow: "var(--theme-rusty-glow)",
+        file: "500.html"
+      },
+      403: {
+        code: "403",
+        label: "Firewall Drop Rule",
+        badge: "🔒 FIREWALL REJECT 🔒",
+        telemetry: "IPTABLES: <span>DROP_RULE_ENFORCED</span>",
+        speaker: "🛠️ PETER (PETE) VANCE - NETWORK ENGINEER:",
+        quote: '"Connection dropped at the perimeter router. Your subnet is not on the corporate VPN access control list. Verify your VLAN tagging and IPsec credentials before attempting another handshake."',
+        characterImg: "images/characters/Peter/peter-pete-prototype.png",
+        theme: "var(--theme-pete)",
+        glow: "var(--theme-pete-glow)",
+        file: "403.html"
+      },
+      401: {
+        code: "401",
+        label: "RADIUS Authentication Required",
+        badge: "🪪 802.1X REJECT 🪪",
+        telemetry: "RADIUS: <span>CERTIFICATE_EXPIRED</span>",
+        speaker: "⭐ STELLA - CHIEF OF PROTOCOL:",
+        quote: '"Access denied by network authentication controller. Your workstation has not completed the 802.1X certificate exchange. Check your smart card or network PIN."',
+        characterImg: "images/characters/stella/stella-blue-white-dots-bob.png",
+        theme: "var(--theme-stella)",
+        glow: "var(--theme-stella-glow)",
+        file: "401.html"
+      },
+      400: {
+        code: "400",
+        label: "Malformed SNMP Packet",
+        badge: "⚡ CORRUPT PACKET ⚡",
+        telemetry: "HEADER: <span>CHECKSUM_FAILED</span>",
+        speaker: "🛠️ PETER (PETE) VANCE:",
+        quote: '"Packet frame checksum mismatch. The incoming datagram violated network RFC protocol formatting. Review network telemetry settings and retry."',
+        characterImg: "images/characters/Peter/peter-pete-prototype.png",
+        theme: "var(--theme-pete)",
+        glow: "var(--theme-pete-glow)",
+        file: "400.html"
+      },
+      502: {
+        code: "502",
+        label: "Gateway Link Down",
+        badge: "📡 FIBER UPLINK DOWN 📡",
+        telemetry: "BGP: <span>PEER_RESET</span>",
+        speaker: "🚀 PENELOPE (PENNY) STERLING:",
+        quote: '"The upstream ISP fiber connection experienced a carrier loss! We are actively failover-routing through our secondary link. Hang tight for thirty seconds while BGP reconverges!"',
+        characterImg: "images/characters/Penelope/penelope-penny-prototype.png",
+        theme: "var(--theme-penny)",
+        glow: "var(--theme-penny-glow)",
+        file: "502.html"
+      },
+      503: {
+        code: "503",
+        label: "Maintenance Window",
+        badge: "⛽ FIRMWARE UPDATE ⛽",
+        telemetry: "SWITCHES: <span>FIRMWARE_UPGRADE</span>",
+        speaker: "🤖 RUSTY MAINTENANCE LOG:",
+        quote: '"WHIRRR! Core switches are undergoing scheduled midnight firmware maintenance and redundant power cycling! Rusty will have all patch bays live momentarily!"',
+        characterImg: "images/characters/Rusty/rusty-001.png",
+        theme: "var(--theme-rusty)",
+        glow: "var(--theme-rusty-glow)",
+        file: "503.html"
+      },
+      504: {
+        code: "504",
+        label: "DNS Resolution Timeout",
+        badge: "⏱️ DNS RECURSION TIMEOUT ⏱️",
+        telemetry: "RESOLVER: <span>QUERY_TIMEOUT</span>",
+        speaker: "🚀 PENELOPE (PENNY) STERLING:",
+        quote: '"The recursive DNS lookup query exceeded its TTL timeout without receiving an authoritative answer. Let\'s flush the DNS cache and ping the nameserver again!"',
+        characterImg: "images/characters/Penelope/penelope-penny-prototype.png",
+        theme: "var(--theme-penny)",
+        glow: "var(--theme-penny-glow)",
+        file: "504.html"
+      },
+      418: {
+        code: "418",
+        label: "I'm a Teapot!",
+        badge: "☕ BREAKROOM ACTIVE ☕",
+        telemetry: "POT: <span>EARL_GREY_BREWING</span>",
+        speaker: "✨ MINA SAYS:",
+        quote: '"Surprise! You found Error 418! ☕ Even IT technicians need a fresh pot of hot tea while untangling patch cables. Come grab a cup in the breakroom before you head back to the server room!"',
+        characterImg: "images/characters/Mina/mina-001.png",
+        theme: "var(--theme-mina)",
+        glow: "var(--theme-mina-glow)",
+        file: "418.html"
+      }
+    };
+
+    function renderError(code) {
+      const data = ERRORS[code] || ERRORS[404];
+
+      document.documentElement.style.setProperty('--accent-theme', data.theme);
+      document.documentElement.style.setProperty('--accent-glow', data.glow);
+      document.documentElement.style.setProperty('--active-theme', data.theme);
+      document.documentElement.style.setProperty('--active-glow', data.glow);
+
+      document.getElementById('signCode').textContent = data.code;
+      document.getElementById('signLabel').textContent = data.label;
+      document.getElementById('signBadge').textContent = data.badge;
+      document.getElementById('signTelemetry').innerHTML = data.telemetry;
+      document.getElementById('speakerTag').innerHTML = `<span>${data.speaker}</span>`;
+      document.getElementById('speechText').textContent = data.quote;
+      document.getElementById('charImg').src = data.characterImg;
+      document.getElementById('charHalo').style.background = `radial-gradient(circle, ${data.theme} 0%, transparent 70%)`;
+      
+      const btnLink = document.getElementById('btnDedicatedLink');
+      btnLink.href = data.file;
+      btnLink.innerHTML = `<span>🔗 Open ${data.file}</span>`;
+
+      const anchor = document.getElementById('dedicatedAnchor');
+      anchor.href = data.file;
+      anchor.textContent = `auth.lanzar.me/${data.file}`;
+
+      document.querySelectorAll('.btn-code-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-code') === code.toString());
+      });
+    }
+
+    document.querySelectorAll('.btn-code-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const code = btn.getAttribute('data-code');
+        renderError(code);
+      });
+    });
+
+    const params = new URLSearchParams(window.location.search);
+    const queryCode = params.get('code');
+    if (queryCode && ERRORS[queryCode]) {
+      renderError(queryCode);
+    }
+  </script>
+</body>
+</html>
+
+
