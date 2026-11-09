@@ -630,6 +630,49 @@ async function runPenetrationSuite() {
     assert(authRes01.status === 200 && authRes01.body.code, 'Authorization code issued for S256 challenge');
     const authCode01 = authRes01.body.code;
 
+    // 1b. Reject authorization missing code_challenge_method
+    const noMethodAuthRes = await request(baseUrl, '/authorize', {
+      method: 'POST',
+      body: {
+        idToken: idToken01,
+        client_id: 'portal',
+        redirect_uri: 'https://portal.lanzar.me',
+        state: 'state_pen01_nomethod',
+        code_challenge: validChallenge
+      }
+    });
+    assert(noMethodAuthRes.status === 400, 'Authorization missing code_challenge_method rejected with HTTP 400');
+    assert(noMethodAuthRes.body.error === 'invalid_request', 'Missing code_challenge_method returns "invalid_request"');
+
+    // 1c. Reject authorization with unsupported code_challenge_method=plain
+    const plainMethodAuthRes = await request(baseUrl, '/authorize', {
+      method: 'POST',
+      body: {
+        idToken: idToken01,
+        client_id: 'portal',
+        redirect_uri: 'https://portal.lanzar.me',
+        state: 'state_pen01_plain',
+        code_challenge: validChallenge,
+        code_challenge_method: 'plain'
+      }
+    });
+    assert(plainMethodAuthRes.status === 400, 'Authorization with code_challenge_method=plain rejected with HTTP 400');
+    assert(plainMethodAuthRes.body.error === 'invalid_request', 'Unsupported code_challenge_method returns "invalid_request"');
+
+    // 1d. Storage layer rejection when codeChallengeMethod is omitted (no implicit fallback)
+    let fallbackThrown = false;
+    try {
+      await codeStore.createCode({
+        uid: uid01,
+        clientId: 'portal',
+        redirectUri: 'https://portal.lanzar.me',
+        codeChallenge: validChallenge
+      });
+    } catch (e) {
+      fallbackThrown = e.message.includes('Explicit codeChallengeMethod is required');
+    }
+    assert(fallbackThrown, 'codeStore.createCode throws error when codeChallengeMethod omitted (no implicit fallback)');
+
     // 2. Attacker attempts exchange with tampered / incorrect verifier
     const tamperedVerifier = 'tampered_bad_verifier_' + crypto.randomBytes(16).toString('hex');
     const tamperedExchangeRes = await request(baseUrl, '/exchange', {
@@ -698,6 +741,30 @@ async function runPenetrationSuite() {
     assert(replayExchangeRes.body.error === 'invalid_grant', 'Replayed code returns "invalid_grant"');
     assert(replayExchangeRes.body.error_description === 'Code invalid or expired.', 'Replay reason confirms code consumed or expired');
 
+    // 2b. Atomic single-use consumption: concurrent exchange race test
+    const raceVerifier = crypto.randomBytes(32).toString('hex');
+    const raceChallenge = crypto.createHash('sha256').update(raceVerifier).digest('base64url');
+    const raceCode = await codeStore.createCode({
+      uid: uid01,
+      clientId: 'portal',
+      redirectUri: 'https://portal.lanzar.me',
+      codeChallenge: raceChallenge,
+      codeChallengeMethod: 'S256'
+    });
+    const [raceRes1, raceRes2] = await Promise.all([
+      request(baseUrl, '/exchange', {
+        method: 'POST',
+        body: { code: raceCode, client_id: 'portal', redirect_uri: 'https://portal.lanzar.me', code_verifier: raceVerifier }
+      }),
+      request(baseUrl, '/exchange', {
+        method: 'POST',
+        body: { code: raceCode, client_id: 'portal', redirect_uri: 'https://portal.lanzar.me', code_verifier: raceVerifier }
+      })
+    ]);
+    const successCount = (raceRes1.status === 200 ? 1 : 0) + (raceRes2.status === 200 ? 1 : 0);
+    const rejectedCount = (raceRes1.status === 400 ? 1 : 0) + (raceRes2.status === 400 ? 1 : 0);
+    assert(successCount === 1 && rejectedCount === 1, 'Concurrent exchange race results in exactly 1 success and 1 rejection (atomic consumption)');
+
     // 3. Expiration attack: exchange code past TTL
     const expiredVerifier = crypto.randomBytes(32).toString('hex');
     const expiredChallenge = crypto.createHash('sha256').update(expiredVerifier).digest('base64url');
@@ -705,7 +772,8 @@ async function runPenetrationSuite() {
       uid: uid01,
       clientId: 'portal',
       redirectUri: 'https://portal.lanzar.me',
-      codeChallenge: expiredChallenge
+      codeChallenge: expiredChallenge,
+      codeChallengeMethod: 'S256'
     });
     const expRecord = await codeStore.getCode(expiredCode);
     expRecord.expiresAt = Date.now() - 5000; // Force TTL expired
@@ -1018,6 +1086,17 @@ async function runPenetrationSuite() {
     });
     assert(bypassAttemptRes.status === 401, 'Static mock_admin_dev_token rejected at HTTP boundary with HTTP 401');
 
+    const bypassAttemptRes2 = await request(baseUrl, `/api/admin/id/users/${uid08}/founders`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer mock_admin_token' },
+      body: {
+        programId: 'pythos_founder',
+        founderNumber: 'P-998',
+        title: 'Pythos Founding Scholar'
+      }
+    });
+    assert(bypassAttemptRes2.status === 401, 'Static mock_admin_token rejected at HTTP boundary with HTTP 401');
+
     // Grant legitimate badge server-side via authoritative admin endpoint
     const grantRes = await request(baseUrl, `/api/admin/id/users/${uid08}/founders`, {
       method: 'POST',
@@ -1085,7 +1164,8 @@ async function runPenetrationSuite() {
       uid: uid01,
       clientId: 'portal',
       redirectUri: 'https://portal.lanzar.me',
-      codeChallenge: crossClientChallenge
+      codeChallenge: crossClientChallenge,
+      codeChallengeMethod: 'S256'
     });
 
     const clientMismatchExchangeRes = await request(baseUrl, '/exchange', {
@@ -1099,6 +1179,61 @@ async function runPenetrationSuite() {
     });
     assert(clientMismatchExchangeRes.status === 400, 'Cross-client exchange mismatch rejected with HTTP 400');
     assert(clientMismatchExchangeRes.body.error_description === 'Client or redirect URI mismatch.', 'Error specifies "Client or redirect URI mismatch."');
+
+    // -------------------------------------------------------------
+    // Test Scenario 11: Fail-Closed Server Startup & Emulator Configuration Gating
+    // -------------------------------------------------------------
+    console.log('\n[PEN-TEST 11] Fail-Closed Server Startup & Emulator Configuration Gating');
+    const { spawnSync } = require('child_process');
+    const serverScriptPath = path.resolve(__dirname, 'auth-backend/server.js');
+
+    // 1. Partial emulator configuration: FIRESTORE_EMULATOR_HOST without FIREBASE_AUTH_EMULATOR_HOST
+    const partialEmuRes = spawnSync(process.execPath, [serverScriptPath], {
+      env: {
+        PATH: process.env.PATH,
+        FIRESTORE_EMULATOR_HOST: '127.0.0.1:8080'
+      },
+      encoding: 'utf8'
+    });
+    assert(partialEmuRes.status === 1, 'Server exits with code 1 on partial emulator configuration');
+    assert(partialEmuRes.stderr.includes('Partial emulator configuration detected'), 'Logs explicit partial emulator rejection message');
+
+    // 2. Non-loopback emulator endpoint rejection
+    const remoteEmuRes = spawnSync(process.execPath, [serverScriptPath], {
+      env: {
+        PATH: process.env.PATH,
+        FIRESTORE_EMULATOR_HOST: '192.168.1.100:8080',
+        FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9099',
+        FIREBASE_PROJECT_ID: 'demo-test'
+      },
+      encoding: 'utf8'
+    });
+    assert(remoteEmuRes.status === 1, 'Server exits with code 1 on non-loopback emulator endpoint');
+    assert(remoteEmuRes.stderr.includes('must be a local loopback endpoint'), 'Logs non-loopback endpoint rejection message');
+
+    // 3. Emulator mode missing FIREBASE_PROJECT_ID
+    const noProjectEmuRes = spawnSync(process.execPath, [serverScriptPath], {
+      env: {
+        PATH: process.env.PATH,
+        FIRESTORE_EMULATOR_HOST: '127.0.0.1:8080',
+        FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9099'
+      },
+      encoding: 'utf8'
+    });
+    assert(noProjectEmuRes.status === 1, 'Server exits with code 1 in emulator mode missing FIREBASE_PROJECT_ID');
+    assert(noProjectEmuRes.stderr.includes('In emulator mode, FIREBASE_PROJECT_ID is required'), 'Logs missing emulator project ID message');
+
+    // 4. Project ID mismatch between service account and environment
+    const mismatchRes = spawnSync(process.execPath, [serverScriptPath], {
+      env: {
+        PATH: process.env.PATH,
+        FIREBASE_SERVICE_ACCOUNT_KEY: JSON.stringify({ project_id: 'lanzar-95ae3-dev' }),
+        FIREBASE_PROJECT_ID: 'lanzar-95ae3'
+      },
+      encoding: 'utf8'
+    });
+    assert(mismatchRes.status === 1, 'Server exits with code 1 on service account vs environment project ID mismatch');
+    assert(mismatchRes.stderr.includes('Project ID mismatch'), 'Logs project ID mismatch message');
 
   } finally {
     // Teardown server

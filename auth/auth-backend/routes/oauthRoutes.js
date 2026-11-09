@@ -12,8 +12,23 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
   router.post('/authorize', async (req, res) => {
     try {
       const { idToken, client_id, redirect_uri, state, code_challenge, code_challenge_method, mfa_proof } = req.body;
-      if (!idToken || !client_id || !redirect_uri || !state || !code_challenge || code_challenge_method !== 'S256') {
+      if (!idToken || !client_id || !redirect_uri || !state || !code_challenge) {
         return res.status(400).json({ error: 'invalid_request', error_description: 'Missing or invalid parameters' });
+      }
+
+      // Strict PKCE requirement: explicit S256 method required, reject missing or unsupported
+      if (!code_challenge_method) {
+        return res.status(400).json({
+          error: 'invalid_request',
+          error_description: 'code_challenge_method is required and must be S256'
+        });
+      }
+
+      if (code_challenge_method !== 'S256') {
+        return res.status(400).json({
+          error: 'invalid_request',
+          error_description: 'Unsupported code_challenge_method. Only S256 is supported.'
+        });
       }
 
       const client = getClient(client_id);
@@ -118,7 +133,7 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
       }
 
       // Remediation for Finding C: Enforce validated challenge method and prevent downgrade
-      if (record.codeChallengeMethod !== 'S256') {
+      if (!record.codeChallengeMethod || record.codeChallengeMethod !== 'S256') {
         return res.status(400).json({
           error: 'invalid_grant',
           error_description: 'Unsupported or mismatched PKCE challenge method.'
@@ -130,7 +145,11 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
         return res.status(400).json({ error: 'invalid_grant', error_description: 'PKCE challenge mismatch.' });
       }
 
-      await codeStore.markUsed(code);
+      // Atomic single-use code consumption
+      const marked = await codeStore.markUsed(code);
+      if (!marked) {
+        return res.status(400).json({ error: 'invalid_grant', error_description: 'Code invalid or expired.' });
+      }
 
       // Create individual active session in Firestore
       const sessionRecord = await sessionService.createSession({

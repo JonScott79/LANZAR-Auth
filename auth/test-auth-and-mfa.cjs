@@ -108,6 +108,7 @@ async function runAuthAndMfaTests() {
       clientId: 'portal',
       redirectUri,
       codeChallenge,
+      codeChallengeMethod: 'S256',
       mfaVerified: false
     });
     if (!code) throw new Error('Failed to generate authorization code');

@@ -62,6 +62,29 @@ function bootstrap(env = process.env, options = { exitOnError: false }) {
     fatal(`Emulator host variables set in a live environment (APP_ENV=${appEnv})`);
   }
 
+  // Reject partial emulator configuration across all environments to prevent live/ADC fallback
+  if (hasAuthEmu !== hasFirestoreEmu) {
+    fatal(`Partial emulator configuration: both FIREBASE_AUTH_EMULATOR_HOST and FIRESTORE_EMULATOR_HOST must be explicitly configured, or neither`);
+  }
+
+  function isLoopbackEndpoint(endpoint) {
+    if (!endpoint || typeof endpoint !== 'string') return false;
+    const parts = endpoint.split(':');
+    if (parts.length !== 2) return false;
+    const [hostname, port] = parts;
+    const portNum = parseInt(port, 10);
+    if (isNaN(portNum) || portNum <= 0 || portNum > 65535) return false;
+    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1';
+  }
+
+  // Enforce loopback binding for emulator endpoints
+  if (hasAuthEmu && !isLoopbackEndpoint(env.FIREBASE_AUTH_EMULATOR_HOST)) {
+    fatal(`FIREBASE_AUTH_EMULATOR_HOST must be a local loopback endpoint (127.0.0.1, localhost), got "${env.FIREBASE_AUTH_EMULATOR_HOST}"`);
+  }
+  if (hasFirestoreEmu && !isLoopbackEndpoint(env.FIRESTORE_EMULATOR_HOST)) {
+    fatal(`FIRESTORE_EMULATOR_HOST must be a local loopback endpoint (127.0.0.1, localhost), got "${env.FIRESTORE_EMULATOR_HOST}"`);
+  }
+
   if (spec.emulators === 'required') {
     if (!(hasAuthEmu && hasFirestoreEmu)) {
       fatal(`APP_ENV=${appEnv} requires both FIREBASE_AUTH_EMULATOR_HOST and FIRESTORE_EMULATOR_HOST; refusing to fall back to live resources`);
