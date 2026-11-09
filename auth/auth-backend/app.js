@@ -1,87 +1,187 @@
 // app.js
-// Express Application Factory for LANZAR ID (LID-ARCH-REV-015)
+// Universal Express Application Factory for LANZAR ID (Phase 1 & Phase 2 Ecosystem)
 
 const express = require('express');
+const cors = require('cors');
 const { createOriginMiddleware } = require('./middleware/originValidator');
+const { createAuthMiddleware } = require('./middleware/authMiddleware');
 const { CookieService } = require('./services/cookieService');
 const { CentralSessionService } = require('./services/centralSessionService');
-const { createSessionRouter } = require('./routes/sessionRoutes');
 const { createCommonVerifier } = require('./verifier/commonVerifier');
 const { createPolicyMiddleware } = require('./verifier/policies');
 
-function createApp({ config, db, authAdmin }) {
+const { SessionService } = require('./sessionService');
+const { FounderService } = require('./founderService');
+const { ProfileService } = require('./profileService');
+const { SMSService } = require('./smsService');
+const { AuthorizationCodeStore } = require('./store');
+
+const { createAccountRouter } = require('./routes/accountRoutes');
+const { createMfaRouter } = require('./routes/mfaRoutes');
+const { createOAuthRouter } = require('./routes/oauthRoutes');
+const { createProfileRouter } = require('./routes/profileRoutes');
+const { createDeviceSessionRouter } = require('./routes/deviceSessionRoutes');
+const { createPhoneRouter } = require('./routes/phoneRoutes');
+const { createDispatchRouter } = require('./routes/dispatchRoutes');
+const { createAdminRouter } = require('./routes/adminRoutes');
+const { createSessionRouter } = require('./routes/sessionRoutes');
+
+function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
   const app = express();
   app.use(express.json());
 
-  // Origin Validation & CORS Middleware (§2.3, §3.1)
-  const originMiddleware = createOriginMiddleware(config);
-  app.use(originMiddleware);
+  // CORS and Origin Validation
+  if (config && config.originMap) {
+    const originMiddleware = createOriginMiddleware(config);
+    app.use(originMiddleware);
+  } else {
+    app.use(cors());
+  }
 
-  // Initialize Services
-  const cookieService = new CookieService(config);
-  const centralSessionService = new CentralSessionService(db, authAdmin, config);
-  const commonVerifier = createCommonVerifier(db, authAdmin, config);
-  const policies = createPolicyMiddleware(commonVerifier, db);
+  // Domain Services Initialization (Injected or Defaulted)
+  const sessionService = services.sessionService || new SessionService(db, authAdmin);
+  const founderService = services.founderService || new FounderService(db);
+  const profileService = services.profileService || new ProfileService(db, authAdmin, sessionService);
+  const smsService = services.smsService || new SMSService(db);
+  const codeStore = stores.codeStore || new AuthorizationCodeStore();
 
-  // Mount Central SSO & Session Routes (§4.2, §4.3)
-  const sessionRouter = createSessionRouter({
-    centralSessionService,
-    cookieService,
+  // Phase 1 Central SSO Services (When config provided)
+  let cookieService = null;
+  let centralSessionService = null;
+  let commonVerifier = null;
+  let policies = null;
+
+  if (config) {
+    cookieService = new CookieService(config);
+    centralSessionService = new CentralSessionService(db, authAdmin, config);
+    commonVerifier = createCommonVerifier(db, authAdmin, config);
+    policies = createPolicyMiddleware(commonVerifier, db);
+  }
+
+  // Shared Authentication Middleware
+  const authMiddleware = createAuthMiddleware({
+    db,
     authAdmin,
-    config
+    sessionService
   });
-  app.use('/api/id', sessionRouter);
+
+  // Mount Modular Routers
+  const { router: accountRouter, reconcileCustomerAccount } = createAccountRouter({ db, authAdmin });
+  app.use('/', accountRouter);
+
+  const mfaRouter = createMfaRouter({
+    db,
+    authAdmin,
+    isUserAdmin: authMiddleware.isUserAdmin
+  });
+  app.use('/mfa', mfaRouter);
+
+  const oauthRouter = createOAuthRouter({
+    db,
+    authAdmin,
+    codeStore,
+    sessionService,
+    isUserAdmin: authMiddleware.isUserAdmin,
+    reconcileCustomerAccount
+  });
+  app.use('/', oauthRouter);
+
+  const profileRouter = createProfileRouter({
+    profileService,
+    authenticateUserMiddleware: authMiddleware.authenticateUserMiddleware
+  });
+  app.use('/api/id', profileRouter);
+
+  const deviceSessionRouter = createDeviceSessionRouter({
+    sessionService,
+    authenticateUserMiddleware: authMiddleware.authenticateUserMiddleware
+  });
+  app.use('/api/id', deviceSessionRouter);
+
+  const phoneRouter = createPhoneRouter({
+    smsService,
+    authenticateUserMiddleware: authMiddleware.authenticateUserMiddleware
+  });
+  app.use('/api/id/phone', phoneRouter);
+
+  const dispatchRouter = createDispatchRouter({
+    db,
+    authenticateUserMiddleware: authMiddleware.authenticateUserMiddleware
+  });
+  app.use('/api/id/dispatch', dispatchRouter);
+
+  const adminRouter = createAdminRouter({
+    db,
+    profileService,
+    founderService,
+    sessionService,
+    authenticateAdminMiddleware: authMiddleware.authenticateAdminMiddleware
+  });
+  app.use('/api/admin/id', adminRouter);
+
+  // Mount Phase 1 Central SSO Routes
+  if (centralSessionService && cookieService) {
+    const sessionRouter = createSessionRouter({
+      centralSessionService,
+      cookieService,
+      authAdmin,
+      config
+    });
+    app.use('/api/id', sessionRouter);
+  }
 
   // Protected Demo / Reference Endpoints for Policy Verification (§5.2, §5.3, §5.4)
-  app.get('/api/id/portal/summary', policies.enforcePolicyA, (req, res) => {
-    return res.status(200).json({
-      message: 'Policy A Access Granted',
-      authContext: req.authContext
+  if (policies) {
+    app.get('/api/id/portal/summary', policies.enforcePolicyA, (req, res) => {
+      return res.status(200).json({
+        message: 'Policy A Access Granted',
+        authContext: req.authContext
+      });
     });
-  });
 
-  app.get('/api/pythos/data', policies.enforcePolicyB('pythos'), (req, res) => {
-    return res.status(200).json({
-      message: 'Policy B Pythos Access Granted',
-      authContext: req.authContext
+    app.get('/api/pythos/data', policies.enforcePolicyB('pythos'), (req, res) => {
+      return res.status(200).json({
+        message: 'Policy B Pythos Access Granted',
+        authContext: req.authContext
+      });
     });
-  });
 
-  app.get('/api/tickets/queue', policies.enforcePolicyB('tickets'), (req, res) => {
-    return res.status(200).json({
-      message: 'Policy B Tickets Access Granted',
-      authContext: req.authContext
+    app.get('/api/tickets/queue', policies.enforcePolicyB('tickets'), (req, res) => {
+      return res.status(200).json({
+        message: 'Policy B Tickets Access Granted',
+        authContext: req.authContext
+      });
     });
-  });
 
-  app.get('/api/threadline/feed', policies.enforcePolicyB('threadline'), (req, res) => {
-    return res.status(200).json({
-      message: 'Policy B Threadline Access Granted',
-      authContext: req.authContext
+    app.get('/api/threadline/feed', policies.enforcePolicyB('threadline'), (req, res) => {
+      return res.status(200).json({
+        message: 'Policy B Threadline Access Granted',
+        authContext: req.authContext
+      });
     });
-  });
 
-  app.get('/api/admin/system-status', policies.enforcePolicyC(), (req, res) => {
-    return res.status(200).json({
-      message: 'Policy C Mission Control Access Granted',
-      authContext: req.authContext,
-      adminProfile: req.adminProfile
+    app.get('/api/admin/system-status', policies.enforcePolicyC(), (req, res) => {
+      return res.status(200).json({
+        message: 'Policy C Mission Control Access Granted',
+        authContext: req.authContext,
+        adminProfile: req.adminProfile
+      });
     });
-  });
 
-  app.get('/api/admin/users/export', policies.enforcePolicyC('users:export'), (req, res) => {
-    return res.status(200).json({
-      message: 'Policy C Scoped Permission Access Granted',
-      permission: 'users:export'
+    app.get('/api/admin/users/export', policies.enforcePolicyC('users:export'), (req, res) => {
+      return res.status(200).json({
+        message: 'Policy C Scoped Permission Access Granted',
+        permission: 'users:export'
+      });
     });
-  });
+  }
 
   // Healthcheck endpoint
   app.get('/api/id/health', (req, res) => {
     return res.status(200).json({
       status: 'healthy',
-      appEnv: config.appEnv,
-      nodeEnv: config.nodeEnv
+      appEnv: config?.appEnv || 'development',
+      nodeEnv: config?.nodeEnv || process.env.NODE_ENV || 'development'
     });
   });
 
@@ -91,7 +191,13 @@ function createApp({ config, db, authAdmin }) {
     cookieService,
     centralSessionService,
     commonVerifier,
-    policies
+    policies,
+    sessionService,
+    founderService,
+    profileService,
+    smsService,
+    codeStore,
+    authMiddleware
   };
 }
 
