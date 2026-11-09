@@ -509,337 +509,35 @@ class MockAuthAdmin {
 }
 
 // ==========================================
-// 4. Initialize Core Services & Express App
+// 4. Initialize Core Services & Shared Express App Factory
 // ==========================================
-const express = require('express');
 const {
   generateBase32Secret,
   generateTOTP,
-  verifyTOTP,
-  encryptTotpSecret,
-  decryptTotpSecret,
-  generateRecoveryCodes,
-  verifyAndConsumeRecoveryCode,
-  createMfaSignedToken,
-  verifyMfaSignedToken
+  encryptTotpSecret
 } = require('./auth-backend/mfaService.js');
-
-const { SessionService } = require('./auth-backend/sessionService.js');
-const { FounderService } = require('./auth-backend/founderService.js');
-const { ProfileService } = require('./auth-backend/profileService.js');
-const { SMSService, MockSMSProvider } = require('./auth-backend/smsService.js');
-const { AuthorizationCodeStore } = require('./auth-backend/store.js');
-const { getClient } = require('./auth-backend/clients.js');
-const { recordSecurityEvent } = require('./auth-backend/auditService.js');
+const { MockSMSProvider } = require('./auth-backend/smsService.js');
+const { createApp } = require('./auth-backend/app.js');
+const { ENV_CONFIGS } = require('./auth-backend/config/environments.js');
 
 // Select database and auth instance
 const db = new MockFirestore();
 const authAdmin = new MockAuthAdmin();
 
-const sessionService = new SessionService(db, authAdmin);
-const founderService = new FounderService(db);
-const profileService = new ProfileService(db, authAdmin, sessionService);
-const smsService = new SMSService(db);
-const codeStore = new AuthorizationCodeStore();
-
-// Express Application Boundary
-const app = express();
-app.use(express.json());
-
-// Verification Boundary Middleware matching server.js
-async function authenticateUserMiddleware(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'unauthorized', error_description: 'Missing Bearer token.' });
-  }
-
-  const token = authHeader.slice(7).trim();
-  try {
-    const decoded = await authAdmin.verifyIdToken(token, true);
-    req.user = decoded;
-    req.uid = decoded.uid;
-
-    const userDoc = await db.collection('users').doc(decoded.uid).get();
-    if (userDoc.exists && userDoc.data().status === 'suspended') {
-      return res.status(403).json({ error: 'account_suspended', error_description: 'This account has been suspended.' });
-    }
-
-    if (decoded.session_id) {
-      const isRevoked = await sessionService.isSessionRevoked(decoded.uid, decoded.session_id);
-      if (isRevoked) {
-        return res.status(401).json({ error: 'session_revoked', error_description: 'This device session has been revoked.' });
-      }
-    }
-
-    next();
-  } catch (err) {
-    if (err.code === 'auth/id-token-revoked') {
-      return res.status(401).json({ error: 'token_revoked', error_description: 'Token has been revoked. Please sign in again.' });
-    }
-    return res.status(401).json({ error: 'invalid_token', error_description: err.message });
-  }
-}
-
-// Mount Actual Production Endpoint Handlers
-app.post('/authorize', async (req, res) => {
-  try {
-    const { idToken, client_id, redirect_uri, state, code_challenge, code_challenge_method, mfa_proof } = req.body;
-    if (!idToken || !client_id || !redirect_uri || !state || !code_challenge || code_challenge_method !== 'S256') {
-      return res.status(400).json({ error: 'invalid_request', error_description: 'Missing or invalid parameters' });
-    }
-
-    const client = getClient(client_id);
-    if (!client || !client.enabled) {
-      return res.status(400).json({ error: 'invalid_client', error_description: 'Unknown or disabled client' });
-    }
-
-    const normalizedRedirect = redirect_uri.replace(/\/+$/, '');
-    const isAuthorized = client.redirectUris.some(uri => {
-      const clean = uri.replace(/\/+$/, '');
-      return clean === normalizedRedirect || normalizedRedirect.startsWith(clean + '/');
-    });
-    if (!isAuthorized) {
-      return res.status(400).json({ error: 'invalid_request', error_description: 'Unauthorized redirect URI' });
-    }
-
-    const decodedToken = await authAdmin.verifyIdToken(idToken, true);
-    const uid = decodedToken.uid;
-    const email = decodedToken.email;
-
-    const userDoc = await db.collection('users').doc(uid).get();
-    if (userDoc.exists && userDoc.data().status === 'suspended') {
-      return res.status(403).json({ error: 'account_suspended', error_description: 'This account has been suspended.' });
-    }
-
-    const mfaDoc = await db.collection('mfa_factors').doc(uid).get();
-    const hasMfa = mfaDoc.exists && mfaDoc.data().enabled;
-
-    if (hasMfa) {
-      let mfaVerified = false;
-      if (mfa_proof) {
-        const proofPayload = verifyMfaSignedToken(mfa_proof);
-        if (proofPayload && proofPayload.uid === uid && proofPayload.action === 'mfa_verified') {
-          mfaVerified = true;
-        }
-      }
-
-      if (!mfaVerified) {
-        const mfaSession = createMfaSignedToken({
-          uid,
-          email,
-          action: 'mfa_challenge'
-        }, 600000);
-
-        return res.status(403).json({
-          error: 'mfa_required',
-          error_description: 'Multi-Factor Authentication required.',
-          mfa_required: true,
-          mfa_session: mfaSession,
-          methods: ['totp']
-        });
-      }
-    }
-
-    const code = await codeStore.createCode({
-      uid,
-      clientId: client_id,
-      redirectUri: redirect_uri,
-      codeChallenge: code_challenge,
-      mfaVerified: hasMfa
-    });
-
-    return res.json({ code, state });
-  } catch (error) {
-    return res.status(500).json({ error: 'server_error', error_description: error.message });
-  }
-});
-
-app.post('/exchange', async (req, res) => {
-  try {
-    const { code, client_id, redirect_uri, code_verifier } = req.body;
-    if (!code || !client_id || !redirect_uri || !code_verifier) {
-      return res.status(400).json({ error: 'invalid_request' });
-    }
-
-    const record = await codeStore.getCode(code);
-    if (!record || record.used || Date.now() > record.expiresAt) {
-      return res.status(400).json({ error: 'invalid_grant', error_description: 'Code invalid or expired.' });
-    }
-
-    const reqRedirect = redirect_uri.replace(/\/+$/, '');
-    const recRedirect = record.redirectUri.replace(/\/+$/, '');
-    if (record.clientId !== client_id || reqRedirect !== recRedirect) {
-      return res.status(400).json({ error: 'invalid_grant', error_description: 'Client or redirect URI mismatch.' });
-    }
-
-    const hash = crypto.createHash('sha256').update(code_verifier).digest('base64url');
-    if (hash !== record.codeChallenge) {
-      return res.status(400).json({ error: 'invalid_grant', error_description: 'PKCE challenge mismatch.' });
-    }
-
-    await codeStore.markUsed(code);
-
-    const sessionRecord = await sessionService.createSession({
-      uid: record.uid,
-      clientId: client_id,
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
-    });
-
-    const customToken = await authAdmin.createCustomToken(record.uid, {
-      session_id: sessionRecord.sessionId,
-      tenant_id: 'lanzar',
-      client_id
-    });
-
-    return res.json({
-      custom_token: customToken,
-      session_id: sessionRecord.sessionId,
-      expires_in: 3600
-    });
-  } catch (error) {
-    return res.status(500).json({ error: 'server_error', error_description: error.message });
-  }
-});
-
-app.post('/mfa/verify', async (req, res) => {
-  try {
-    const { mfaSession, code, method } = req.body;
-    if (!mfaSession || !code) return res.status(400).json({ error: 'missing_parameters' });
-
-    const sessionPayload = verifyMfaSignedToken(mfaSession);
-    if (!sessionPayload || sessionPayload.action !== 'mfa_challenge') {
-      return res.status(401).json({ error: 'session_expired', error_description: 'MFA session has expired.' });
-    }
-
-    const uid = sessionPayload.uid;
-    const mfaDoc = await db.collection('mfa_factors').doc(uid).get();
-    if (!mfaDoc.exists || !mfaDoc.data().enabled) {
-      return res.status(400).json({ error: 'mfa_not_enrolled', error_description: 'MFA is not enrolled.' });
-    }
-
-    const mfaData = mfaDoc.data();
-    let verified = false;
-
-    if (method === 'recovery') {
-      const recoveryResult = verifyAndConsumeRecoveryCode(code, mfaData.recoveryCodes || []);
-      if (recoveryResult.valid) {
-        verified = true;
-      }
-    } else {
-      const plainSecret = decryptTotpSecret(mfaData.totpSecret);
-      verified = verifyTOTP(plainSecret, code, uid);
-    }
-
-    if (!verified) {
-      return res.status(401).json({ error: 'invalid_code', error_description: 'The code provided is invalid or expired.' });
-    }
-
-    const mfaProof = createMfaSignedToken({
-      uid,
-      email: sessionPayload.email,
-      action: 'mfa_verified',
-      verifiedAt: Date.now()
-    }, 300000);
-
-    return res.json({ success: true, mfaProof });
-  } catch (err) {
-    return res.status(500).json({ error: 'server_error', error_description: err.message });
-  }
-});
-
-app.get('/api/id/profile', authenticateUserMiddleware, async (req, res) => {
-  try {
-    const profile = await profileService.getUserProfile(req.uid);
-    if (!profile) return res.status(404).json({ error: 'user_not_found' });
-    return res.json(profile);
-  } catch (err) {
-    return res.status(500).json({ error: 'server_error', error_description: err.message });
-  }
-});
-
-app.put('/api/id/profile', authenticateUserMiddleware, async (req, res) => {
-  try {
-    const updated = await profileService.updateUserProfile(req.uid, req.body, req.ip);
-    return res.json(updated);
-  } catch (err) {
-    return res.status(500).json({ error: 'server_error', error_description: err.message });
-  }
-});
-
-app.get('/api/id/sessions', authenticateUserMiddleware, async (req, res) => {
-  try {
-    const sessions = await sessionService.listUserSessions(req.uid);
-    return res.json({ sessions });
-  } catch (err) {
-    return res.status(500).json({ error: 'server_error', error_description: err.message });
-  }
-});
-
-app.delete('/api/id/sessions/:sessionId', authenticateUserMiddleware, async (req, res) => {
-  try {
-    const result = await sessionService.revokeSession(req.uid, req.params.sessionId, req.uid, req.ip);
-    return res.json(result);
-  } catch (err) {
-    return res.status(500).json({ error: 'server_error', error_description: err.message });
-  }
-});
-
-app.post('/api/id/sessions/revoke-all', authenticateUserMiddleware, async (req, res) => {
-  try {
-    const result = await sessionService.revokeAllSessions(req.uid, req.uid, req.ip);
-    return res.json(result);
-  } catch (err) {
-    return res.status(500).json({ error: 'server_error', error_description: err.message });
-  }
-});
-
-app.post('/api/id/phone/send-otp', authenticateUserMiddleware, async (req, res) => {
-  try {
-    const { phoneNumber } = req.body;
-    const result = await smsService.sendVerificationOTP(req.uid, phoneNumber, req.ip);
-    return res.json(result);
-  } catch (err) {
-    return res.status(400).json({ error: 'phone_verification_error', error_description: err.message });
-  }
-});
-
-app.post('/api/id/phone/verify', authenticateUserMiddleware, async (req, res) => {
-  try {
-    const { phoneNumber, code } = req.body;
-    const result = await smsService.verifyOTP(req.uid, phoneNumber, code);
-    return res.json(result);
-  } catch (err) {
-    return res.status(400).json({ error: 'phone_verification_error', error_description: err.message });
-  }
-});
-
-// Admin endpoints for testing
-app.post('/api/admin/id/users/:uid/suspend', async (req, res) => {
-  try {
-    const { status, reason } = req.body;
-    const result = await profileService.setAccountStatus(req.params.uid, status, reason, 'admin_secpen', req.ip);
-    return res.json(result);
-  } catch (err) {
-    return res.status(400).json({ error: 'status_error', error_description: err.message });
-  }
-});
-
-app.post('/api/admin/id/users/:uid/founders', async (req, res) => {
-  try {
-    const { programId, founderNumber, title, grantReason } = req.body;
-    const result = await founderService.grantFounderDesignation({
-      uid: req.params.uid,
-      programId,
-      founderNumber,
-      title,
-      grantedBy: 'admin_secpen',
-      grantReason
-    });
-    return res.json(result);
-  } catch (err) {
-    return res.status(400).json({ error: 'founder_error', error_description: err.message });
-  }
+// Initialize shared Express application via universal factory
+const testConfig = ENV_CONFIGS.test;
+const {
+  app,
+  sessionService,
+  founderService,
+  profileService,
+  smsService,
+  codeStore,
+  authMiddleware
+} = createApp({
+  config: testConfig,
+  db,
+  authAdmin
 });
 
 // ==========================================
@@ -891,6 +589,19 @@ async function runPenetrationSuite() {
   const baseUrl = `http://127.0.0.1:${port}`;
 
   try {
+    // Authoritative test admin setup for administrative endpoints (§3, §4)
+    const adminUid = `${TEST_NAMESPACE}_admin`;
+    tracker.registerUid(adminUid);
+    tracker.registerDoc('admins', adminUid);
+    tracker.registerDoc('users', adminUid);
+    await authAdmin.createUser({ uid: adminUid, email: `${adminUid}@lanzar.me` });
+    await db.collection('admins').doc(adminUid).set({
+      uid: adminUid,
+      email: `${adminUid}@lanzar.me`,
+      active: true
+    });
+    const adminToken = await authAdmin.mintIdToken(adminUid, { email: `${adminUid}@lanzar.me` });
+
     // -------------------------------------------------------------
     // Test Scenario 01: PKCE Tamper Resistance & Code Interception
     // -------------------------------------------------------------
@@ -1096,6 +807,7 @@ async function runPenetrationSuite() {
     // Suspend user account via administrative action
     const suspendRes = await request(baseUrl, `/api/admin/id/users/${uid05}/suspend`, {
       method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
       body: { status: 'suspended', reason: 'Penetration test simulated containment' }
     });
     assert(suspendRes.status === 200 && suspendRes.body.status === 'suspended', 'Account status transitioned to suspended');
@@ -1276,6 +988,7 @@ async function runPenetrationSuite() {
     // Grant legitimate badge server-side via authoritative admin endpoint
     const grantRes = await request(baseUrl, `/api/admin/id/users/${uid08}/founders`, {
       method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
       body: {
         programId: 'pythos_founder',
         founderNumber: 'P-999',
