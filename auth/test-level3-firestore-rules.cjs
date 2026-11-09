@@ -42,7 +42,16 @@ const {
 
 const PROJECT_ID = 'demo-lanzar-rules-test';
 const RULES_PATH = path.resolve(__dirname, '../firestore.rules');
-const EMULATOR_JAR = path.resolve(process.env.USERPROFILE, '.cache/firebase/emulators/cloud-firestore-emulator-v1.19.6.jar');
+function findEmulatorJar() {
+  const cacheDir = path.resolve(process.env.USERPROFILE, '.cache/firebase/emulators');
+  if (fs.existsSync(cacheDir)) {
+    const files = fs.readdirSync(cacheDir);
+    const jar = files.find(f => f.startsWith('cloud-firestore-emulator-') && f.endsWith('.jar'));
+    if (jar) return path.join(cacheDir, jar);
+  }
+  return path.resolve(cacheDir, 'cloud-firestore-emulator-v1.19.8.jar');
+}
+const EMULATOR_JAR = findEmulatorJar();
 const EMULATOR_HOST = '127.0.0.1';
 const EMULATOR_PORT = 8080; // Standardized canonical port (matches firebase.json)
 
@@ -50,6 +59,7 @@ let passedTests = 0;
 let failedTests = 0;
 let emulatorProc = null;
 let emulatorClosed = false;
+let isReusingActiveEmulator = false;
 let testFinishedNormally = false;
 
 function assertCheck(passed, description) {
@@ -88,6 +98,9 @@ async function probeEmulatorHealth(host, port, maxAttempts = 10, delayMs = 300) 
  * and force-terminates if the process does not terminate within 3 seconds.
  */
 async function terminateEmulator() {
+  if (isReusingActiveEmulator) {
+    return;
+  }
   if (!emulatorProc || emulatorClosed) {
     return;
   }
@@ -163,79 +176,90 @@ async function runRulesTestSuite() {
     process.exit(1);
   }
 
-  if (!fs.existsSync(EMULATOR_JAR)) {
-    console.error(`[FATAL] Firestore emulator JAR not found at: ${EMULATOR_JAR}`);
-    process.exit(1);
-  }
-
   const rulesContent = fs.readFileSync(RULES_PATH, 'utf8');
 
-  // Spawn local Firestore emulator process
-  console.log(`[EMULATOR] Spawning local Firestore emulator on ${EMULATOR_HOST}:${EMULATOR_PORT}...`);
-  emulatorProc = spawn('java', [
-    '-jar', EMULATOR_JAR,
-    '--host', EMULATOR_HOST,
-    '--port', String(EMULATOR_PORT),
-    '--rules', RULES_PATH
-  ], { stdio: 'pipe' });
+  // Check if a local Firestore emulator is already active on host:port
+  try {
+    await probeEmulatorHealth(EMULATOR_HOST, EMULATOR_PORT, 2, 100);
+    isReusingActiveEmulator = true;
+    console.log(`[EMULATOR] Active Firestore emulator detected on ${EMULATOR_HOST}:${EMULATOR_PORT}. Reusing active instance.\n`);
+  } catch (_) {
+    isReusingActiveEmulator = false;
+  }
 
-  // Monitor unexpected early process exit
-  emulatorProc.on('exit', (code, signal) => {
-    emulatorClosed = true;
-    if (!testFinishedNormally) {
-      console.error(`\n[FATAL] Local emulator process exited prematurely (code: ${code}, signal: ${signal})`);
+  if (!isReusingActiveEmulator) {
+    if (!fs.existsSync(EMULATOR_JAR)) {
+      console.error(`[FATAL] Firestore emulator JAR not found at: ${EMULATOR_JAR}`);
+      process.exit(1);
     }
-  });
 
-  // Signal & exception hooks ensuring clean termination
-  let hookTriggered = false;
-  const emergencyTeardown = async (source, err) => {
-    if (hookTriggered) return;
-    hookTriggered = true;
-    console.error(`\n[CLEANUP] Triggered emergency teardown from ${source}${err ? ': ' + err.message : ''}`);
-    await terminateEmulator();
-    process.exit(1);
-  };
+    // Spawn local Firestore emulator process
+    console.log(`[EMULATOR] Spawning local Firestore emulator on ${EMULATOR_HOST}:${EMULATOR_PORT}...`);
+    emulatorProc = spawn('java', [
+      '-jar', EMULATOR_JAR,
+      '--host', EMULATOR_HOST,
+      '--port', String(EMULATOR_PORT),
+      '--rules', RULES_PATH
+    ], { stdio: 'pipe' });
 
-  process.once('SIGINT', () => emergencyTeardown('SIGINT'));
-  process.once('SIGTERM', () => emergencyTeardown('SIGTERM'));
-  process.once('uncaughtException', (err) => emergencyTeardown('uncaughtException', err));
-
-  // Await emulator startup with reliable timeout handling
-  await new Promise((resolve, reject) => {
-    let resolved = false;
-    const timeout = setTimeout(async () => {
-      if (!resolved) {
-        resolved = true;
-        console.error('[EMULATOR] Startup timed out after 15s. Terminating child process...');
-        await terminateEmulator();
-        reject(new Error('Emulator startup timed out after 15s'));
+    // Monitor unexpected early process exit
+    emulatorProc.on('exit', (code, signal) => {
+      emulatorClosed = true;
+      if (!testFinishedNormally) {
+        console.error(`\n[FATAL] Local emulator process exited prematurely (code: ${code}, signal: ${signal})`);
       }
-    }, 15000);
+    });
 
-    const checkLine = (data) => {
-      const s = data.toString();
-      if (s.includes('Dev App Server is now running')) {
+    // Signal & exception hooks ensuring clean termination
+    let hookTriggered = false;
+    const emergencyTeardown = async (source, err) => {
+      if (hookTriggered) return;
+      hookTriggered = true;
+      console.error(`\n[CLEANUP] Triggered emergency teardown from ${source}${err ? ': ' + err.message : ''}`);
+      await terminateEmulator();
+      process.exit(1);
+    };
+
+    process.once('SIGINT', () => emergencyTeardown('SIGINT'));
+    process.once('SIGTERM', () => emergencyTeardown('SIGTERM'));
+    process.once('uncaughtException', (err) => emergencyTeardown('uncaughtException', err));
+
+    // Await emulator startup with reliable timeout handling
+    await new Promise((resolve, reject) => {
+      let resolved = false;
+      const timeout = setTimeout(async () => {
+        if (!resolved) {
+          resolved = true;
+          console.error('[EMULATOR] Startup timed out after 15s. Terminating child process...');
+          await terminateEmulator();
+          reject(new Error('Emulator startup timed out after 15s'));
+        }
+      }, 15000);
+
+      const checkLine = (data) => {
+        const s = data.toString();
+        if (s.includes('Dev App Server is now running')) {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timeout);
+            resolve();
+          }
+        }
+      };
+
+      emulatorProc.stdout.on('data', checkLine);
+      emulatorProc.stderr.on('data', checkLine);
+      emulatorProc.once('error', async (err) => {
         if (!resolved) {
           resolved = true;
           clearTimeout(timeout);
-          resolve();
+          console.error(`[EMULATOR] Startup error: ${err.message}`);
+          await terminateEmulator();
+          reject(err);
         }
-      }
-    };
-
-    emulatorProc.stdout.on('data', checkLine);
-    emulatorProc.stderr.on('data', checkLine);
-    emulatorProc.once('error', async (err) => {
-      if (!resolved) {
-        resolved = true;
-        clearTimeout(timeout);
-        console.error(`[EMULATOR] Startup error: ${err.message}`);
-        await terminateEmulator();
-        reject(err);
-      }
+      });
     });
-  });
+  }
 
   // Probe emulator health via loopback HTTP
   try {

@@ -69,22 +69,26 @@ const ENV_CONFIGS = {
     cookieName: 'lanzar_dev_sess',
     cookieAttributes: 'Path=/; HttpOnly; SameSite=Lax',
     apiBaseUrl: 'http://localhost:4001',
-    authHubUrl: 'http://localhost:5178',
-    portalUrl: 'http://localhost:5175',
+    authHubUrl: 'http://localhost:4000',
+    portalUrl: 'http://localhost:5173',
     originMap: {
-      'http://localhost:5174': 'pythos',
-      'http://localhost:5176': 'tickets',
-      'http://localhost:5177': 'threadline',
-      'http://localhost:5175': 'id_portal',
+      'http://localhost:4000': 'auth_hub',
+      'http://127.0.0.1:4000': 'auth_hub',
       'http://localhost:5173': 'mission_control',
-      'http://localhost:5178': 'auth_hub'
+      'http://127.0.0.1:5173': 'mission_control',
+      'http://localhost:5174': 'tickets',
+      'http://localhost:5175': 'threadline',
+      'http://localhost:5176': 'ai',
+      'http://localhost:3000': 'portal',
+      'http://localhost:5178': 'auth_hub_legacy'
     },
     continuationAllowlist: [
-      'http://localhost:5175/',
+      'http://localhost:4000/',
+      'http://localhost:5173/',
       'http://localhost:5174/',
+      'http://localhost:5175/',
       'http://localhost:5176/',
-      'http://localhost:5177/',
-      'http://localhost:5173/'
+      'http://localhost:3000/'
     ]
   },
 

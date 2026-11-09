@@ -602,12 +602,17 @@ export default function MyLanzarAccount({ user, onClose = null }) {
                   Open <strong>Google Authenticator</strong> or <strong>Microsoft Authenticator</strong>, tap Add Account, and scan the QR code below.
                 </p>
                 <div className="qr-container">
-                  {/* Standard QR rendering via Google Charts zero-dependency safe image API */}
-                  <img 
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(totpSetup.otpauthUrl)}`} 
-                    alt="TOTP QR Code" 
-                    className="qr-image"
-                  />
+                  {typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? (
+                    <div className="local-qr-box" style={{ width: 180, height: 180, border: '2px dashed #0284c7', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: '#38bdf8', fontSize: '12px', padding: '12px', boxSizing: 'border-box' }}>
+                      Offline Dev Mode: Use Manual Setup Key Below
+                    </div>
+                  ) : (
+                    <img 
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(totpSetup.otpauthUrl)}`} 
+                      alt="TOTP QR Code" 
+                      className="qr-image"
+                    />
+                  )}
                 </div>
                 <div className="manual-key-wrap">
                   <span className="manual-key-label">Manual Setup Key:</span>

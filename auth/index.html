@@ -7,13 +7,18 @@
     <title>LANZAR Identity</title>
     <meta name="description" content="Central Authentication Hub for the LANZAR ecosystem." />
     <meta name="theme-color" content="#102A43" />
-    <!-- Google Analytics -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-CY8BM4YE8C"></script>
+    <!-- Google Analytics (Production Only) -->
     <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag() { dataLayer.push(arguments); }
-      gtag('js', new Date());
-      gtag('config', 'G-CY8BM4YE8C');
+      if (window.location.hostname === 'auth.lanzar.me') {
+        const s = document.createElement('script');
+        s.async = true;
+        s.src = 'https://www.googletagmanager.com/gtag/js?id=G-CY8BM4YE8C';
+        document.head.appendChild(s);
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
+        gtag('config', 'G-CY8BM4YE8C');
+      }
     </script>
   </head>
   <body>
