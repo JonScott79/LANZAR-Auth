@@ -29,6 +29,58 @@ function parseServiceAccount(env) {
   return null;
 }
 
+/**
+ * Validates that an endpoint string is a valid loopback address with an integer port between 1 and 65535.
+ * Strictly supports:
+ * - IPv4: 127.0.0.1:<port>
+ * - Hostname: localhost:<port>
+ * - Bracketed IPv6: [::1]:<port>
+ *
+ * Rejects external IP addresses, non-loopback hostnames, malformed ports (e.g. 8080junk, -1, 0, 70000),
+ * and missing ports.
+ *
+ * @param {string} endpoint
+ * @returns {boolean}
+ */
+function isLoopbackEndpoint(endpoint) {
+  if (!endpoint || typeof endpoint !== 'string') return false;
+
+  let host;
+  let portStr;
+
+  if (endpoint.startsWith('[')) {
+    // Bracketed IPv6 format: [::1]:port
+    const closingBracket = endpoint.indexOf(']');
+    if (closingBracket === -1) return false;
+    host = endpoint.slice(1, closingBracket);
+    const remainder = endpoint.slice(closingBracket + 1);
+    if (!remainder.startsWith(':')) return false;
+    portStr = remainder.slice(1);
+  } else {
+    // Standard host:port format
+    const lastColon = endpoint.lastIndexOf(':');
+    if (lastColon === -1) return false;
+    host = endpoint.slice(0, lastColon);
+    portStr = endpoint.slice(lastColon + 1);
+  }
+
+  // Host validation: must strictly be IPv4 loopback (127.0.0.1), localhost, or IPv6 loopback (::1)
+  if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') {
+    return false;
+  }
+
+  // Port validation: strictly digits only, integer between 1 and 65535
+  if (!/^\d+$/.test(portStr)) {
+    return false;
+  }
+  const port = Number(portStr);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return false;
+  }
+
+  return true;
+}
+
 function bootstrap(env = process.env, options = { exitOnError: false }) {
   function fatal(message) {
     if (options.exitOnError) {
@@ -65,16 +117,6 @@ function bootstrap(env = process.env, options = { exitOnError: false }) {
   // Reject partial emulator configuration across all environments to prevent live/ADC fallback
   if (hasAuthEmu !== hasFirestoreEmu) {
     fatal(`Partial emulator configuration: both FIREBASE_AUTH_EMULATOR_HOST and FIRESTORE_EMULATOR_HOST must be explicitly configured, or neither`);
-  }
-
-  function isLoopbackEndpoint(endpoint) {
-    if (!endpoint || typeof endpoint !== 'string') return false;
-    const parts = endpoint.split(':');
-    if (parts.length !== 2) return false;
-    const [hostname, port] = parts;
-    const portNum = parseInt(port, 10);
-    if (isNaN(portNum) || portNum <= 0 || portNum > 65535) return false;
-    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1';
   }
 
   // Enforce loopback binding for emulator endpoints
@@ -151,5 +193,6 @@ function bootstrap(env = process.env, options = { exitOnError: false }) {
 
 module.exports = {
   bootstrap,
-  ConfigurationError
+  ConfigurationError,
+  isLoopbackEndpoint
 };

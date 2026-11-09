@@ -1211,6 +1211,41 @@ async function runPenetrationSuite() {
     assert(remoteEmuRes.status === 1, 'Server exits with code 1 on non-loopback emulator endpoint');
     assert(remoteEmuRes.stderr.includes('must be a local loopback endpoint'), 'Logs non-loopback endpoint rejection message');
 
+    // 2b. Malformed port rejection (e.g. 8080junk) in server startup
+    const junkPortRes = spawnSync(process.execPath, [serverScriptPath], {
+      env: {
+        PATH: process.env.PATH,
+        FIRESTORE_EMULATOR_HOST: '127.0.0.1:8080junk',
+        FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9099',
+        FIREBASE_PROJECT_ID: 'demo-test'
+      },
+      encoding: 'utf8'
+    });
+    assert(junkPortRes.status === 1, 'Server exits with code 1 on malformed port (8080junk)');
+    assert(junkPortRes.stderr.includes('must be a local loopback endpoint'), 'Logs malformed port rejection message');
+
+    // 2c. Dedicated isLoopbackEndpoint parser positive & negative battery
+    const { isLoopbackEndpoint } = require('./auth-backend/config/bootstrap');
+    // Positive cases
+    assert(isLoopbackEndpoint('127.0.0.1:8080') === true, 'Accepts standard IPv4 loopback (127.0.0.1:8080)');
+    assert(isLoopbackEndpoint('localhost:9099') === true, 'Accepts standard localhost loopback (localhost:9099)');
+    assert(isLoopbackEndpoint('[::1]:8080') === true, 'Accepts bracketed IPv6 loopback ([::1]:8080)');
+    assert(isLoopbackEndpoint('127.0.0.1:1') === true, 'Accepts min valid port boundary 1');
+    assert(isLoopbackEndpoint('[::1]:65535') === true, 'Accepts max valid port boundary 65535');
+    // Negative cases: malformed ports
+    assert(isLoopbackEndpoint('127.0.0.1:8080junk') === false, 'Rejects trailing junk in IPv4 port (8080junk)');
+    assert(isLoopbackEndpoint('[::1]:8080junk') === false, 'Rejects trailing junk in bracketed IPv6 port ([::1]:8080junk)');
+    assert(isLoopbackEndpoint('127.0.0.1:0') === false, 'Rejects port 0');
+    assert(isLoopbackEndpoint('127.0.0.1:65536') === false, 'Rejects port > 65535');
+    assert(isLoopbackEndpoint('127.0.0.1:-80') === false, 'Rejects negative port');
+    assert(isLoopbackEndpoint('127.0.0.1') === false, 'Rejects missing port');
+    assert(isLoopbackEndpoint('[::1]') === false, 'Rejects bracketed IPv6 missing port');
+    // Negative cases: non-loopback addresses
+    assert(isLoopbackEndpoint('192.168.1.1:8080') === false, 'Rejects RFC 1918 private IP (192.168.1.1)');
+    assert(isLoopbackEndpoint('10.0.0.1:8080') === false, 'Rejects 10.0.0.1 private IP');
+    assert(isLoopbackEndpoint('example.com:8080') === false, 'Rejects external hostname (example.com)');
+    assert(isLoopbackEndpoint('[2001:db8::1]:8080') === false, 'Rejects external IPv6 address');
+
     // 3. Emulator mode missing FIREBASE_PROJECT_ID
     const noProjectEmuRes = spawnSync(process.execPath, [serverScriptPath], {
       env: {

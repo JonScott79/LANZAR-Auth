@@ -1,4 +1,30 @@
 // store.js
+// OAuth 2.0 Authorization Code Storage for LANZAR ID
+//
+// ============================================================================
+// DEPLOYMENT ARCHITECTURE REQUIREMENT & CONCURRENCY BOUNDARY NOTE:
+// ============================================================================
+// 1. Single-Process Protection Scope:
+//    The current AuthorizationCodeStore uses an in-memory JavaScript Map.
+//    Atomic single-use consumption and compare-and-swap semantics (markUsed)
+//    guarantee protection strictly within a single Node.js runtime process.
+//
+// 2. Multi-Instance Deployment Requirement:
+//    In a horizontally-scaled multi-instance or clustered production deployment,
+//    in-memory Maps across independent processes do NOT share state. Therefore:
+//    - Multi-instance deployment requires shared, high-availability persistent storage
+//      (e.g., Firestore distributed documents, Redis, or Memcached).
+//    - Authorization code consumption across multiple instances MUST use an atomic,
+//      transactional operation (such as a Firestore transaction with precondition checks,
+//      or a Redis Lua script / SETNX with atomic expiration) to guarantee global single-use
+//      and prevent cross-instance replay or race conditions.
+//
+// 3. Task Scope Boundary:
+//    In accordance with architectural authorization for Step 5, this in-memory
+//    implementation is retained for offline, zero-cloud test isolation and local runtime.
+//    Do not introduce live databases, external network caches, or paid infrastructure.
+// ============================================================================
+
 const crypto = require('crypto');
 
 class AuthorizationCodeStore {

@@ -12,12 +12,41 @@ const fs = require('fs');
 // ==========================================
 function isLoopbackEndpoint(endpoint) {
     if (!endpoint || typeof endpoint !== 'string') return false;
-    const parts = endpoint.split(':');
-    if (parts.length !== 2) return false;
-    const [host, port] = parts;
-    const portNum = parseInt(port, 10);
-    if (isNaN(portNum) || portNum <= 0 || portNum > 65535) return false;
-    return host === '127.0.0.1' || host === 'localhost' || host === '::1';
+
+    let host;
+    let portStr;
+
+    if (endpoint.startsWith('[')) {
+        // Bracketed IPv6 format: [::1]:port
+        const closingBracket = endpoint.indexOf(']');
+        if (closingBracket === -1) return false;
+        host = endpoint.slice(1, closingBracket);
+        const remainder = endpoint.slice(closingBracket + 1);
+        if (!remainder.startsWith(':')) return false;
+        portStr = remainder.slice(1);
+    } else {
+        // Standard host:port format
+        const lastColon = endpoint.lastIndexOf(':');
+        if (lastColon === -1) return false;
+        host = endpoint.slice(0, lastColon);
+        portStr = endpoint.slice(lastColon + 1);
+    }
+
+    // Host validation: must strictly be IPv4 loopback (127.0.0.1), localhost, or IPv6 loopback (::1)
+    if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') {
+        return false;
+    }
+
+    // Port validation: strictly digits only, integer between 1 and 65535
+    if (!/^\d+$/.test(portStr)) {
+        return false;
+    }
+    const port = Number(portStr);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        return false;
+    }
+
+    return true;
 }
 
 // ==========================================
