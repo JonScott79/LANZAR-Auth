@@ -1,4 +1,4 @@
-﻿// store.js
+// store.js
 const crypto = require('crypto');
 
 class AuthorizationCodeStore {
@@ -12,6 +12,7 @@ class AuthorizationCodeStore {
      * @param {string} data.clientId
      * @param {string} data.redirectUri
      * @param {string} data.codeChallenge
+     * @param {string} [data.codeChallengeMethod='S256']
      * @returns {string} The generated code
      */
     async createCode(data) {
@@ -20,6 +21,7 @@ class AuthorizationCodeStore {
 
         this.codes.set(code, {
             ...data,
+            codeChallengeMethod: data.codeChallengeMethod || 'S256',
             expiresAt,
             used: false
         });

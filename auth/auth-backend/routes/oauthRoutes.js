@@ -82,12 +82,13 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
         }
       }
 
-      // PRESERVE FINDING 3 (PKCE code challenge method not persisted in code record)
+      // Remediation for Finding C: Persist negotiated PKCE code challenge method in code record
       const code = await codeStore.createCode({
         uid,
         clientId: client_id,
         redirectUri: redirect_uri,
         codeChallenge: code_challenge,
+        codeChallengeMethod: code_challenge_method,
         mfaVerified: isAdmin || hasMfa
       });
 
@@ -114,6 +115,14 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
       const recRedirect = record.redirectUri.replace(/\/+$/, '');
       if (record.clientId !== client_id || reqRedirect !== recRedirect) {
         return res.status(400).json({ error: 'invalid_grant', error_description: 'Client or redirect URI mismatch.' });
+      }
+
+      // Remediation for Finding C: Enforce validated challenge method and prevent downgrade
+      if (record.codeChallengeMethod !== 'S256') {
+        return res.status(400).json({
+          error: 'invalid_grant',
+          error_description: 'Unsupported or mismatched PKCE challenge method.'
+        });
       }
 
       const hash = crypto.createHash('sha256').update(code_verifier).digest('base64url');

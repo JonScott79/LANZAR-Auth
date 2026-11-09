@@ -36,13 +36,6 @@ function createAuthMiddleware({ db, authAdmin, sessionService }) {
 
     const token = authHeader.slice(7).trim();
 
-    // PRESERVE FINDING 1 (Development token bypass - pending separate authorized remediation)
-    if (process.env.NODE_ENV !== 'production' && (token === 'mock_admin_dev_token' || token === 'mock_admin_token')) {
-      req.user = { uid: 'Tcdyrq9vIVhfPeeDPnTrZIP553x1', email: 'jon@lanzar.me', role: 'ADMIN' };
-      req.uid = 'Tcdyrq9vIVhfPeeDPnTrZIP553x1';
-      return next();
-    }
-
     try {
       // Enforce checkRevoked: true against Google validAfterTime
       const decoded = await authAdmin.verifyIdToken(token, true);

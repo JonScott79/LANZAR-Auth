@@ -647,6 +647,27 @@ async function runPenetrationSuite() {
     assert(tamperedExchangeRes.body.error_description === 'PKCE challenge mismatch.', 'Rejection reason states PKCE challenge mismatch');
     assert(!tamperedExchangeRes.body.custom_token, 'Zero token minted on PKCE verification failure');
 
+    // 3. Finding C verification: PKCE method enforcement & downgrade resistance
+    const downgradeCode = await codeStore.createCode({
+      uid: uid01,
+      clientId: 'portal',
+      redirectUri: 'https://portal.lanzar.me',
+      codeChallenge: validChallenge,
+      codeChallengeMethod: 'plain'
+    });
+    const downgradeRes = await request(baseUrl, '/exchange', {
+      method: 'POST',
+      body: {
+        code: downgradeCode,
+        client_id: 'portal',
+        redirect_uri: 'https://portal.lanzar.me',
+        code_verifier: validVerifier
+      }
+    });
+    assert(downgradeRes.status === 400, 'PKCE exchange with non-S256 method rejected with HTTP 400');
+    assert(downgradeRes.body.error === 'invalid_grant', 'Downgrade rejection returns error "invalid_grant"');
+    assert(downgradeRes.body.error_description === 'Unsupported or mismatched PKCE challenge method.', 'Error description confirms challenge method validation');
+
     // -------------------------------------------------------------
     // Test Scenario 02: Authorization Code Replay & Expiration
     // -------------------------------------------------------------
@@ -984,6 +1005,18 @@ async function runPenetrationSuite() {
     assert(tamperAttemptRes.status === 200, 'Profile update request processed');
     assert(!tamperAttemptRes.body.derivedBadges.includes('HACKED_SUPERUSER_BADGE'), 'Client-injected badge stripped by profileService anti-tampering guard');
     assert(tamperAttemptRes.body.role === 'customer', 'Client attempt to elevate role to admin discarded');
+
+    // Finding A verification: Static mock_admin_dev_token rejected at HTTP boundary
+    const bypassAttemptRes = await request(baseUrl, `/api/admin/id/users/${uid08}/founders`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer mock_admin_dev_token' },
+      body: {
+        programId: 'pythos_founder',
+        founderNumber: 'P-999',
+        title: 'Pythos Founding Scholar'
+      }
+    });
+    assert(bypassAttemptRes.status === 401, 'Static mock_admin_dev_token rejected at HTTP boundary with HTTP 401');
 
     // Grant legitimate badge server-side via authoritative admin endpoint
     const grantRes = await request(baseUrl, `/api/admin/id/users/${uid08}/founders`, {
