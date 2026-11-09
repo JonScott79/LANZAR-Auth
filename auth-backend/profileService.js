@@ -42,6 +42,7 @@ class ProfileService {
             avatarUrl: userData.avatarUrl || authRecord?.photoURL || null,
             role: userData.role || 'customer',
             status: userData.status || (authRecord?.disabled ? 'suspended' : 'active'),
+            statusReason: userData.statusReason || null,
             tokenVersion: userData.tokenVersion || 1,
             derivedBadges: Array.isArray(userData.derivedBadges) ? userData.derivedBadges : [],
             mfa: {
@@ -93,6 +94,10 @@ class ProfileService {
         });
 
         return await this.getUserProfile(uid);
+    }
+
+    async updateProfile(uid, updates, ipAddress = null) {
+        return this.updateUserProfile(uid, updates, ipAddress);
     }
 
     /**

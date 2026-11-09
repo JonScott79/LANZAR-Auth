@@ -139,13 +139,22 @@ class SMSService {
     // ==========================================
     // CAPABILITY 1: Account Settings Phone Verification
     // ==========================================
-    async sendVerificationOTP(uid, rawPhoneNumber, ipAddress = null) {
-        const normalized = this.normalizePhoneNumber(rawPhoneNumber);
+    async sendVerificationOTP(uidOrObj, rawPhoneNumber, ipAddress = null) {
+        let uid = uidOrObj;
+        let phone = rawPhoneNumber;
+        let ip = ipAddress;
+        if (typeof uidOrObj === 'object' && uidOrObj !== null) {
+            uid = uidOrObj.uid;
+            phone = uidOrObj.phoneNumber || uidOrObj.rawPhoneNumber;
+            ip = uidOrObj.ipAddress || null;
+        }
+
+        const normalized = this.normalizePhoneNumber(phone);
         if (!normalized) {
             throw new Error('Invalid phone number format. Please provide a valid E.164 phone number.');
         }
 
-        this.checkRateLimits(normalized, ipAddress);
+        this.checkRateLimits(normalized, ip);
 
         const code = crypto.randomInt(100000, 999999).toString();
         const codeHash = crypto.createHash('sha256').update(code).digest('hex');
@@ -172,9 +181,18 @@ class SMSService {
         };
     }
 
-    async verifyOTP(uid, rawPhoneNumber, submittedCode) {
-        const normalized = this.normalizePhoneNumber(rawPhoneNumber);
-        if (!normalized || !submittedCode) {
+    async verifyOTP(uidOrObj, rawPhoneNumber, submittedCode) {
+        let uid = uidOrObj;
+        let phone = rawPhoneNumber;
+        let code = submittedCode;
+        if (typeof uidOrObj === 'object' && uidOrObj !== null) {
+            uid = uidOrObj.uid;
+            phone = uidOrObj.phoneNumber || uidOrObj.rawPhoneNumber;
+            code = uidOrObj.code || uidOrObj.submittedCode;
+        }
+
+        const normalized = this.normalizePhoneNumber(phone);
+        if (!normalized || !code) {
             throw new Error('Phone number and verification code are required.');
         }
 
