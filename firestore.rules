@@ -1,0 +1,87 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: Enforce strict field allowlist, type constraints, and immutability for user profile (§3.3)
+    function isValidProfileUpdate(data) {
+      let allowedKeys = ['displayName', 'avatarUrl', 'notificationPreferences', 'updatedAt'];
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      return affected.hasOnly(allowedKeys)
+        && (!affected.hasAny(['displayName']) || (data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100))
+        && (!affected.hasAny(['avatarUrl']) || (data.avatarUrl is string && data.avatarUrl.size() <= 2048 && (data.avatarUrl == '' || data.avatarUrl.matches('^https://.*'))))
+        && (!affected.hasAny(['notificationPreferences']) || (data.notificationPreferences is map
+            && data.notificationPreferences.keys().hasOnly(['newsletter', 'productUpdates', 'securityAlerts'])
+            && (!('newsletter' in data.notificationPreferences) || data.notificationPreferences.newsletter is bool)
+            && (!('productUpdates' in data.notificationPreferences) || data.notificationPreferences.productUpdates is bool)
+            && (!('securityAlerts' in data.notificationPreferences) || data.notificationPreferences.securityAlerts is bool)))
+        && (!affected.hasAny(['updatedAt']) || data.updatedAt is timestamp);
+    }
+
+    // 1. Customer-facing profile document: strict ownership & strict allowlist (§3.3)
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId
+                    && isValidProfileUpdate(request.resource.data);
+      allow create, delete: if false; // Created/deleted exclusively via backend Admin SDK
+    }
+
+    // 2. Authoritative Founders subcollection: strictly server-only
+    match /users/{userId}/founders/{founderId} {
+      allow read, write: if false;
+    }
+
+    // 3. Central & child sessions subcollections: strictly server-only
+    match /users/{userId}/central_sessions/{sessionId} {
+      allow read, write: if false;
+    }
+    match /users/{userId}/session_slots/{slotId} {
+      allow read, write: if false;
+    }
+    match /users/{userId}/sessions/{sessionId} {
+      allow read, write: if false;
+    }
+
+    // 4. Server-Only Security Collections: Absolute Client Deny (§3.3)
+    match /user_security/{userId} {
+      allow read, write: if false;
+    }
+    match /security_logs/{logId} {
+      allow read, write: if false;
+    }
+    match /mfa_factors/{userId} {
+      allow read, write: if false;
+    }
+    match /admins/{adminId} {
+      allow read, write: if false;
+    }
+    match /customers/{userId} {
+      allow read, write: if false;
+    }
+    match /mailing_list/{email} {
+      allow read, write: if false;
+    }
+    match /entitlements/{userId}/{document=**} {
+      allow read, write: if false;
+    }
+    match /subscriptions/{subId} {
+      allow read, write: if false;
+    }
+    match /stripe_event_inbox/{eventId} {
+      allow read, write: if false;
+    }
+    match /stripe_payment_failures/{invoiceId} {
+      allow read, write: if false;
+    }
+    match /stripe_dead_letter/{eventId} {
+      allow read, write: if false;
+    }
+    match /_lanzar_environment/{docId} {
+      allow read, write: if false;
+    }
+
+    // Default deny all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
