@@ -3,8 +3,9 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // Helper: Enforce strict field allowlist, type constraints, and immutability for user profile (§3.3)
+    // Server controls updatedAt via Admin SDK serverTimestamp; client direct updates to updatedAt are DENIED.
     function isValidProfileUpdate(data) {
-      let allowedKeys = ['displayName', 'avatarUrl', 'notificationPreferences', 'updatedAt'];
+      let allowedKeys = ['displayName', 'avatarUrl', 'notificationPreferences'];
       let affected = request.resource.data.diff(resource.data).affectedKeys();
       return affected.hasOnly(allowedKeys)
         && (!affected.hasAny(['displayName']) || (data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100))
@@ -13,8 +14,7 @@ service cloud.firestore {
             && data.notificationPreferences.keys().hasOnly(['newsletter', 'productUpdates', 'securityAlerts'])
             && (!('newsletter' in data.notificationPreferences) || data.notificationPreferences.newsletter is bool)
             && (!('productUpdates' in data.notificationPreferences) || data.notificationPreferences.productUpdates is bool)
-            && (!('securityAlerts' in data.notificationPreferences) || data.notificationPreferences.securityAlerts is bool)))
-        && (!affected.hasAny(['updatedAt']) || data.updatedAt is timestamp);
+            && (!('securityAlerts' in data.notificationPreferences) || data.notificationPreferences.securityAlerts is bool)));
     }
 
     // 1. Customer-facing profile document: strict ownership & strict allowlist (§3.3)
@@ -51,6 +51,9 @@ service cloud.firestore {
     match /mfa_factors/{userId} {
       allow read, write: if false;
     }
+    match /phone_otps/{otpId} {
+      allow read, write: if false;
+    }
     match /admins/{adminId} {
       allow read, write: if false;
     }
@@ -79,7 +82,7 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Default deny all other paths
+    // 5. Default deny all other paths
     match /{document=**} {
       allow read, write: if false;
     }
