@@ -36,8 +36,8 @@ function parseServiceAccount(env) {
  * - Hostname: localhost:<port>
  * - Bracketed IPv6: [::1]:<port>
  *
- * Rejects external IP addresses, non-loopback hostnames, malformed ports (e.g. 8080junk, -1, 0, 70000),
- * and missing ports.
+ * Explicitly rejects unbracketed IPv6 addresses (e.g. ::1:8080), external IP addresses,
+ * non-loopback hostnames, malformed ports (e.g. 8080junk, -1, 0, 70000), and missing ports.
  *
  * @param {string} endpoint
  * @returns {boolean}
@@ -56,17 +56,23 @@ function isLoopbackEndpoint(endpoint) {
     const remainder = endpoint.slice(closingBracket + 1);
     if (!remainder.startsWith(':')) return false;
     portStr = remainder.slice(1);
+
+    // Bracketed IPv6 host must strictly be ::1
+    if (host !== '::1') {
+      return false;
+    }
   } else {
     // Standard host:port format
+    // Strictly requires IPv4 loopback (127.0.0.1) or localhost
+    // Explicitly rejects unbracketed IPv6 (e.g. ::1:8080)
     const lastColon = endpoint.lastIndexOf(':');
     if (lastColon === -1) return false;
     host = endpoint.slice(0, lastColon);
     portStr = endpoint.slice(lastColon + 1);
-  }
 
-  // Host validation: must strictly be IPv4 loopback (127.0.0.1), localhost, or IPv6 loopback (::1)
-  if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') {
-    return false;
+    if (host !== '127.0.0.1' && host !== 'localhost') {
+      return false;
+    }
   }
 
   // Port validation: strictly digits only, integer between 1 and 65535

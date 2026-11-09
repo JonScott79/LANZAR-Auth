@@ -1240,7 +1240,8 @@ async function runPenetrationSuite() {
     assert(isLoopbackEndpoint('127.0.0.1:-80') === false, 'Rejects negative port');
     assert(isLoopbackEndpoint('127.0.0.1') === false, 'Rejects missing port');
     assert(isLoopbackEndpoint('[::1]') === false, 'Rejects bracketed IPv6 missing port');
-    // Negative cases: non-loopback addresses
+    // Negative cases: non-loopback addresses & unbracketed IPv6
+    assert(isLoopbackEndpoint('::1:8080') === false, 'Explicitly rejects unbracketed IPv6 loopback (::1:8080)');
     assert(isLoopbackEndpoint('192.168.1.1:8080') === false, 'Rejects RFC 1918 private IP (192.168.1.1)');
     assert(isLoopbackEndpoint('10.0.0.1:8080') === false, 'Rejects 10.0.0.1 private IP');
     assert(isLoopbackEndpoint('example.com:8080') === false, 'Rejects external hostname (example.com)');
