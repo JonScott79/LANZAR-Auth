@@ -14,7 +14,7 @@ const { SessionService } = require('./sessionService');
 const { FounderService } = require('./founderService');
 const { ProfileService } = require('./profileService');
 const { SMSService } = require('./smsService');
-const { AuthorizationCodeStore } = require('./store');
+const { AuthorizationCodeStore, FirestoreAuthorizationCodeStore } = require('./store');
 
 const { createAccountRouter } = require('./routes/accountRoutes');
 const { createMfaRouter } = require('./routes/mfaRoutes');
@@ -28,6 +28,11 @@ const { createSessionRouter } = require('./routes/sessionRoutes');
 
 function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
   const app = express();
+
+  // Trusted Reverse Proxy Configuration (LID-VER-003)
+  const trustProxySetting = config?.trustProxy || process.env.TRUST_PROXY || 'loopback, linklocal, uniquelocal';
+  app.set('trust proxy', trustProxySetting);
+
   app.use(express.json());
 
   // CORS and Origin Validation
@@ -43,7 +48,9 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
   const founderService = services.founderService || new FounderService(db);
   const profileService = services.profileService || new ProfileService(db, authAdmin, sessionService);
   const smsService = services.smsService || new SMSService(db);
-  const codeStore = stores.codeStore || new AuthorizationCodeStore();
+  const codeStore = stores.codeStore || (db && typeof db.collection === 'function'
+    ? new FirestoreAuthorizationCodeStore(db)
+    : new AuthorizationCodeStore());
 
   // Phase 1 Central SSO Services (When config provided)
   let cookieService = null;

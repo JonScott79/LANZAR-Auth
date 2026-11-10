@@ -78,4 +78,97 @@ class AuthorizationCodeStore {
     }
 }
 
-module.exports = { AuthorizationCodeStore };
+/**
+ * Distributed Firestore-backed OAuth 2.0 Authorization Code Store (LID-SEC-001)
+ * Guarantees cross-instance durability, single-use atomic consumption,
+ * client binding, PKCE S256 validation, and replay defense across multi-instance deployments.
+ */
+class FirestoreAuthorizationCodeStore {
+    constructor(db) {
+        if (!db) {
+            throw new Error('Firestore database instance is required for FirestoreAuthorizationCodeStore');
+        }
+        this.db = db;
+    }
+
+    /**
+     * @param {Object} data
+     * @param {string} data.uid
+     * @param {string} data.clientId
+     * @param {string} data.redirectUri
+     * @param {string} data.codeChallenge
+     * @param {string} data.codeChallengeMethod
+     * @returns {Promise<string>} The generated authorization code
+     */
+    async createCode(data) {
+        if (!data || !data.codeChallengeMethod) {
+            throw new Error('Explicit codeChallengeMethod is required (no fallback allowed)');
+        }
+        if (data.codeChallengeMethod !== 'S256') {
+            throw new Error('Only S256 codeChallengeMethod is supported');
+        }
+
+        const code = crypto.randomBytes(32).toString('hex');
+        const expiresAt = Date.now() + 600000; // 10 minutes (600 seconds)
+
+        const record = {
+            uid: data.uid,
+            clientId: data.clientId,
+            redirectUri: data.redirectUri,
+            codeChallenge: data.codeChallenge,
+            codeChallengeMethod: data.codeChallengeMethod,
+            expiresAt,
+            used: false,
+            createdAt: Date.now()
+        };
+
+        await this.db.collection('oauth_codes').doc(code).set(record);
+        return code;
+    }
+
+    /**
+     * Retrieves the authorization code record.
+     * @param {string} code
+     * @returns {Promise<Object|null>}
+     */
+    async getCode(code) {
+        if (!code || typeof code !== 'string') return null;
+        try {
+            const snap = await this.db.collection('oauth_codes').doc(code).get();
+            if (!snap.exists) return null;
+            return snap.data();
+        } catch (_) {
+            return null;
+        }
+    }
+
+    /**
+     * Atomically marks an authorization code as used via Firestore transaction.
+     * Guarantees atomic CAS semantics across distributed multi-instance nodes.
+     * @param {string} code
+     * @returns {Promise<boolean>} True if transitioned from used: false to used: true; false if already used or missing
+     */
+    async markUsed(code) {
+        if (!code || typeof code !== 'string') return false;
+        const docRef = this.db.collection('oauth_codes').doc(code);
+        try {
+            return await this.db.runTransaction(async (transaction) => {
+                const snap = await transaction.get(docRef);
+                if (!snap.exists) return false;
+                const data = snap.data();
+                if (data.used) return false;
+                if (data.expiresAt && Date.now() > data.expiresAt) return false;
+
+                transaction.update(docRef, {
+                    used: true,
+                    consumedAt: Date.now()
+                });
+                return true;
+            });
+        } catch (err) {
+            return false;
+        }
+    }
+}
+
+module.exports = { AuthorizationCodeStore, FirestoreAuthorizationCodeStore };

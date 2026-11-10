@@ -1,32 +1,67 @@
 // rateLimiter.js
-// Application-Level Rate Limiting Middleware for LANZAR ID (LID-SEC-002)
+// Application-Level Rate Limiting Middleware for LANZAR ID (LID-SEC-002, LID-VER-001, LID-VER-002, LID-VER-003)
 //
 // Single-Instance In-Memory Protection:
-// NOTE FOR DEPLOYMENT: This implementation uses in-memory sliding counters.
-// In a distributed, multi-instance production environment, these limiters must be
-// backed by a shared distributed atomic store (e.g. Redis sliding window or Cloud Armor)
+// NOTE FOR DEPLOYMENT: This implementation uses in-memory bounded sliding counters.
+// In a distributed, multi-instance production environment, these limiters can be
+// augmented by a shared distributed atomic store (e.g. Redis sliding window or Cloud Armor)
 // to prevent attackers from distributing brute-force attempts across sibling nodes.
 
 const { verifyMfaSignedToken } = require('../mfaService');
 
-// Map<key, { count: number, resetAt: number, failedCount: number } >
+// Map<key, { count?: number, resetAt: number, failedCount?: number } >
 const rateLimitStore = new Map();
 
-// Periodic cleanup of expired rate limit buckets (every 60s, unreferenced)
-const cleanupTimer = setInterval(() => {
-  const now = Date.now();
+// Upper bound for in-memory entries (LID-VER-001)
+let MAX_ENTRIES = 10000;
+
+function setMaxEntries(n) {
+  MAX_ENTRIES = n;
+}
+
+function getRateLimitStoreSize() {
+  return rateLimitStore.size;
+}
+
+function pruneExpiredEntries(now = Date.now()) {
   for (const [key, record] of rateLimitStore.entries()) {
     if (now >= record.resetAt) {
       rateLimitStore.delete(key);
     }
   }
+}
+
+/**
+ * Safe bounded insert into rateLimitStore.
+ * Prunes expired entries when capacity is reached; evicts oldest entries if still at capacity.
+ */
+function safeSet(key, record) {
+  if (rateLimitStore.has(key)) {
+    rateLimitStore.set(key, record);
+    return;
+  }
+  if (rateLimitStore.size >= MAX_ENTRIES) {
+    pruneExpiredEntries();
+    while (rateLimitStore.size >= MAX_ENTRIES) {
+      const oldestKey = rateLimitStore.keys().next().value;
+      if (oldestKey === undefined) break;
+      rateLimitStore.delete(oldestKey);
+    }
+  }
+  rateLimitStore.set(key, record);
+}
+
+// Periodic cleanup of expired rate limit buckets (every 60s, unreferenced)
+const cleanupTimer = setInterval(() => {
+  pruneExpiredEntries();
 }, 60000);
 if (cleanupTimer.unref) cleanupTimer.unref();
 
 function getClientIp(req) {
+  // Use Express's validated req.ip when trust proxy is configured (LID-VER-003),
+  // falling back to socket remoteAddress. Never trust raw unvalidated X-Forwarded-For headers.
   return (
     req.ip ||
-    req.headers['x-forwarded-for']?.split(',')[0].trim() ||
     req.socket?.remoteAddress ||
     '127.0.0.1'
   );
@@ -49,7 +84,7 @@ function createRateLimiter({
 
     if (!record || now >= record.resetAt) {
       record = { count: 0, resetAt: now + windowMs };
-      rateLimitStore.set(key, record);
+      safeSet(key, record);
     }
 
     record.count++;
@@ -104,13 +139,13 @@ function phoneDispatchLimiter(req, res, next) {
   let ipRecord = rateLimitStore.get(ipKey);
   if (!ipRecord || now >= ipRecord.resetAt) {
     ipRecord = { count: 0, resetAt: now + windowMs };
-    rateLimitStore.set(ipKey, ipRecord);
+    safeSet(ipKey, ipRecord);
   }
 
   let phoneRecord = rateLimitStore.get(phoneKey);
   if (!phoneRecord || now >= phoneRecord.resetAt) {
     phoneRecord = { count: 0, resetAt: now + windowMs };
-    rateLimitStore.set(phoneKey, phoneRecord);
+    safeSet(phoneKey, phoneRecord);
   }
 
   ipRecord.count++;
@@ -133,45 +168,106 @@ function phoneDispatchLimiter(req, res, next) {
   next();
 }
 
-// 4. MFA Failed Attempt Tracker (5 failed attempts per account per 15 minutes)
-const MFA_FAIL_LIMIT = 5;
+// 4. MFA Dual-Key Failed Attempt Tracker (LID-VER-002)
+// Per-account-and-IP limit: 5 failures / 15 min (prevents account lockout DoS against victims from other IPs)
+// Per-IP limit: 15 failures / 15 min (prevents brute-forcing / credential scanning across multiple accounts from single IP)
+const MFA_FAIL_ACC_IP_LIMIT = 5;
+const MFA_FAIL_IP_LIMIT = 15;
 const MFA_FAIL_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
-function checkMfaRateLimit(uid, method = 'totp') {
-  if (!uid) return { allowed: true };
-  const key = `mfa_fail:${method}:${uid}`;
+function checkMfaRateLimit(uid, method = 'totp', ip = 'unknown') {
   const now = Date.now();
-  const record = rateLimitStore.get(key);
+  const safeIp = ip || 'unknown';
 
-  if (record && now < record.resetAt && record.failedCount >= MFA_FAIL_LIMIT) {
-    const retryAfter = Math.ceil((record.resetAt - now) / 1000);
-    return {
-      allowed: false,
-      retryAfter,
-      message: `Too many failed ${method === 'recovery' ? 'recovery code' : 'TOTP'} attempts. Please try again in ${Math.ceil(retryAfter / 60)} minutes.`
-    };
+  // 1. Check IP aggregate throttle (protects against distributed credential stuffing / enumeration)
+  if (safeIp !== 'unknown') {
+    const ipKey = `mfa_fail:ip:${safeIp}`;
+    const ipRecord = rateLimitStore.get(ipKey);
+    if (ipRecord && now < ipRecord.resetAt && ipRecord.failedCount >= MFA_FAIL_IP_LIMIT) {
+      const retryAfter = Math.ceil((ipRecord.resetAt - now) / 1000);
+      return {
+        allowed: false,
+        retryAfter,
+        message: 'Too many failed verification attempts. Please try again later.'
+      };
+    }
+  }
+
+  // 2. Check UID + IP specific throttle (prevents attacker on IP A from locking out legitimate user on IP B)
+  if (uid) {
+    const accIpKey = `mfa_fail:acc_ip:${uid}:${safeIp}`;
+    const accRecord = rateLimitStore.get(accIpKey);
+    if (accRecord && now < accRecord.resetAt && accRecord.failedCount >= MFA_FAIL_ACC_IP_LIMIT) {
+      const retryAfter = Math.ceil((accRecord.resetAt - now) / 1000);
+      return {
+        allowed: false,
+        retryAfter,
+        message: 'Too many failed verification attempts. Please try again later.'
+      };
+    }
+
+    // Check unknown-IP record for callers that record failures without an explicit client IP
+    if (safeIp !== 'unknown') {
+      const unkKey = `mfa_fail:acc_ip:${uid}:unknown`;
+      const unkRecord = rateLimitStore.get(unkKey);
+      if (unkRecord && now < unkRecord.resetAt && unkRecord.failedCount >= MFA_FAIL_ACC_IP_LIMIT) {
+        const retryAfter = Math.ceil((unkRecord.resetAt - now) / 1000);
+        return {
+          allowed: false,
+          retryAfter,
+          message: 'Too many failed verification attempts. Please try again later.'
+        };
+      }
+    }
+
+    // Backwards-compatible check for legacy UID key if present
+    const legacyKey = `mfa_fail:${method}:${uid}`;
+    const legacyRecord = rateLimitStore.get(legacyKey);
+    if (legacyRecord && now < legacyRecord.resetAt && legacyRecord.failedCount >= MFA_FAIL_ACC_IP_LIMIT) {
+      const retryAfter = Math.ceil((legacyRecord.resetAt - now) / 1000);
+      return {
+        allowed: false,
+        retryAfter,
+        message: 'Too many failed verification attempts. Please try again later.'
+      };
+    }
   }
 
   return { allowed: true };
 }
 
-function recordMfaFailure(uid, method = 'totp') {
-  if (!uid) return;
-  const key = `mfa_fail:${method}:${uid}`;
+function recordMfaFailure(uid, method = 'totp', ip = 'unknown') {
   const now = Date.now();
-  let record = rateLimitStore.get(key);
+  const safeIp = ip || 'unknown';
 
-  if (!record || now >= record.resetAt) {
-    record = { failedCount: 0, resetAt: now + MFA_FAIL_WINDOW_MS };
-    rateLimitStore.set(key, record);
+  if (safeIp !== 'unknown') {
+    const ipKey = `mfa_fail:ip:${safeIp}`;
+    let ipRecord = rateLimitStore.get(ipKey);
+    if (!ipRecord || now >= ipRecord.resetAt) {
+      ipRecord = { failedCount: 0, resetAt: now + MFA_FAIL_WINDOW_MS };
+    }
+    ipRecord.failedCount++;
+    safeSet(ipKey, ipRecord);
   }
 
-  record.failedCount++;
+  if (uid) {
+    const accIpKey = `mfa_fail:acc_ip:${uid}:${safeIp}`;
+    let accRecord = rateLimitStore.get(accIpKey);
+    if (!accRecord || now >= accRecord.resetAt) {
+      accRecord = { failedCount: 0, resetAt: now + MFA_FAIL_WINDOW_MS };
+    }
+    accRecord.failedCount++;
+    safeSet(accIpKey, accRecord);
+  }
 }
 
-function clearMfaFailures(uid, method = 'totp') {
-  if (!uid) return;
-  rateLimitStore.delete(`mfa_fail:${method}:${uid}`);
+function clearMfaFailures(uid, method = 'totp', ip = 'unknown') {
+  const safeIp = ip || 'unknown';
+  if (uid) {
+    rateLimitStore.delete(`mfa_fail:acc_ip:${uid}:${safeIp}`);
+    rateLimitStore.delete(`mfa_fail:acc_ip:${uid}:unknown`);
+    rateLimitStore.delete(`mfa_fail:${method}:${uid}`);
+  }
 }
 
 /**
@@ -179,8 +275,20 @@ function clearMfaFailures(uid, method = 'totp') {
  */
 function mfaVerifyRateLimitMiddleware(req, res, next) {
   const { mfaSession, method } = req.body || {};
+  const ip = getClientIp(req);
+
   if (!mfaSession) {
-    return next(); // Missing parameter will be caught by route handler
+    // Check IP-level throttle even before session is validated
+    const ipCheck = checkMfaRateLimit(null, method, ip);
+    if (!ipCheck.allowed) {
+      res.setHeader('Retry-After', ipCheck.retryAfter);
+      return res.status(429).json({
+        error: 'too_many_requests',
+        error_description: ipCheck.message,
+        retry_after: ipCheck.retryAfter
+      });
+    }
+    return next(); // Missing parameter caught by route handler
   }
 
   // Safely extract UID without verifying signature yet (verify will happen in handler)
@@ -195,16 +303,14 @@ function mfaVerifyRateLimitMiddleware(req, res, next) {
     // Malformed session will be rejected in route handler
   }
 
-  if (uid) {
-    const check = checkMfaRateLimit(uid, method === 'recovery' ? 'recovery' : 'totp');
-    if (!check.allowed) {
-      res.setHeader('Retry-After', check.retryAfter);
-      return res.status(429).json({
-        error: 'too_many_requests',
-        error_description: check.message,
-        retry_after: check.retryAfter
-      });
-    }
+  const check = checkMfaRateLimit(uid, method === 'recovery' ? 'recovery' : 'totp', ip);
+  if (!check.allowed) {
+    res.setHeader('Retry-After', check.retryAfter);
+    return res.status(429).json({
+      error: 'too_many_requests',
+      error_description: check.message,
+      retry_after: check.retryAfter
+    });
   }
 
   next();
@@ -226,5 +332,8 @@ module.exports = {
   checkMfaRateLimit,
   recordMfaFailure,
   clearMfaFailures,
-  resetRateLimits
+  resetRateLimits,
+  getClientIp,
+  setMaxEntries,
+  getRateLimitStoreSize
 };

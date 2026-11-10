@@ -5,15 +5,23 @@ const crypto = require('crypto');
 const { FieldValue } = require('firebase-admin/firestore');
 const { recordSecurityEvent } = require('./auditService');
 
-// In-memory LRU-style cache for fast revocation checks to minimize Firestore reads
-// Map<`${uid}:${sessionId}`, { uid: string, revoked: boolean, reason: string, expiresAt: string|null, checkedAt: number }>
+// In-memory cache for fast revocation checks to minimize Firestore reads when explicitly enabled.
+// In distributed multi-instance environments (LID-SEC-003), authoritative Firestore lookups
+// eliminate stale process-local cache windows. Default TTL is 0 (authoritative Firestore lookup)
+// unless explicitly configured via constructor options or SESSION_CACHE_TTL_MS environment variable.
 const sessionCache = new Map();
-const CACHE_TTL_MS = 30000; // 30 seconds
 
 class SessionService {
-    constructor(db, authAdmin) {
+    constructor(db, authAdmin, options = {}) {
         this.db = db;
         this.authAdmin = authAdmin;
+
+        const envTtl = process.env.SESSION_CACHE_TTL_MS !== undefined
+            ? parseInt(process.env.SESSION_CACHE_TTL_MS, 10)
+            : null;
+        this.cacheTtlMs = options.cacheTtlMs !== undefined
+            ? options.cacheTtlMs
+            : (envTtl !== null ? envTtl : 0);
     }
 
     /**
@@ -77,22 +85,26 @@ class SessionService {
      * 'active' | 'revoked' | 'expired' | 'unknown_session' | 'check_failed'.
      * Fails closed on lookup errors.
      */
-    async checkSession(uid, sessionId) {
+    async checkSession(uid, sessionId, options = {}) {
         if (!uid || typeof uid !== 'string' || !sessionId || typeof sessionId !== 'string') {
             return { active: false, reason: 'unknown_session' };
         }
 
         const cacheKey = `${uid}:${sessionId}`;
-        const cached = sessionCache.get(cacheKey);
-        if (cached && Date.now() - cached.checkedAt < CACHE_TTL_MS) {
-            if (cached.uid && cached.uid !== uid) {
-                return { active: false, reason: 'uid_mismatch' };
+        const bypassCache = options.bypassCache || this.cacheTtlMs <= 0;
+
+        if (!bypassCache) {
+            const cached = sessionCache.get(cacheKey);
+            if (cached && Date.now() - cached.checkedAt < this.cacheTtlMs) {
+                if (cached.uid && cached.uid !== uid) {
+                    return { active: false, reason: 'uid_mismatch' };
+                }
+                return {
+                    active: !cached.revoked,
+                    reason: cached.reason || (cached.revoked ? 'revoked' : 'active'),
+                    expiresAt: cached.expiresAt || null
+                };
             }
-            return {
-                active: !cached.revoked,
-                reason: cached.reason || (cached.revoked ? 'revoked' : 'active'),
-                expiresAt: cached.expiresAt || null
-            };
         }
 
         try {
@@ -153,8 +165,8 @@ class SessionService {
      * Checks whether an individual session has been revoked.
      * Enforced server-side on protected API requests.
      */
-    async isSessionRevoked(uid, sessionId) {
-        const state = await this.checkSession(uid, sessionId);
+    async isSessionRevoked(uid, sessionId, options = {}) {
+        const state = await this.checkSession(uid, sessionId, options);
         return !state.active;
     }
 

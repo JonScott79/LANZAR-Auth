@@ -22,8 +22,19 @@ class MockFirestore {
   }
 
   async runTransaction(updateFunction) {
-    const tx = new MockTransaction(this);
-    return await updateFunction(tx);
+    if (!this._txQueue) this._txQueue = Promise.resolve();
+    let release;
+    const lock = new Promise((resolve) => { release = resolve; });
+    const prev = this._txQueue;
+    this._txQueue = prev.then(() => lock);
+
+    await prev;
+    try {
+      const tx = new MockTransaction(this);
+      return await updateFunction(tx);
+    } finally {
+      release();
+    }
   }
 }
 
