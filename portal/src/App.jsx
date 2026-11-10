@@ -3,6 +3,11 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { auth, signOutUser, signInWithCustomToken } from './firebase/auth.js'
 import { getAuthorizedCustomer, getOrCreateAuthorizedCustomer } from './firebase/customers.js'
 import { getAuthorizedAdmin } from './firebase/admins.js'
+import { 
+  LanzarAuth, 
+  DEVELOPMENT_CONFIG, 
+  PRODUCTION_CONFIG 
+} from './sdk/lanzar-auth-modal.js'
 
 import Login from './pages/Login.jsx'
 import AdminApp from './admin/AdminApp.jsx'
@@ -17,11 +22,12 @@ function App() {
   const [authError, setAuthError] = useState(null)
   const [isExchanging, setIsExchanging] = useState(false)
 
-  // Auth Hub API URL (Local vs Prod)
-  const authBackendUrl = window.location.hostname === 'localhost' ? 'http://localhost:4001' : 'https://auth-api.lanzar.me';
+  const activeConfig = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? DEVELOPMENT_CONFIG
+    : PRODUCTION_CONFIG
 
   useEffect(() => {
-    // 1. Check if returning from Auth Hub
+    // 1. Check if returning from Auth Hub top-level redirect flow
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
     const state = urlParams.get('state');
@@ -31,36 +37,37 @@ function App() {
       const storedState = sessionStorage.getItem('pkce_state');
       const codeVerifier = sessionStorage.getItem('pkce_code_verifier');
 
-      if (state !== storedState) {
+      if (!storedState || state !== storedState) {
         setAuthError('Authentication state mismatch. Please try again.');
         setIsExchanging(false);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (!codeVerifier) {
+        setAuthError('Missing PKCE verifier for authorization exchange.');
+        setIsExchanging(false);
+        window.history.replaceState({}, document.title, window.location.pathname);
       } else {
         const cleanRedirectUri = window.location.origin;
-        fetch(`${authBackendUrl}/exchange`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-              code,
-              client_id: 'portal',
-              redirect_uri: cleanRedirectUri,
-              code_verifier: codeVerifier
-          })
-        })
-        .then(res => res.json().then(data => ({ ok: res.ok, data })))
-        .then(({ ok, data }) => {
-          if (!ok) throw new Error(data.error_description || data.error || 'Failed to exchange token');
+        LanzarAuth.exchangeCodeForSession({
+          code,
+          clientId: 'portal',
+          redirectUri: cleanRedirectUri,
+          codeVerifier
+        }, activeConfig)
+        .then((data) => {
+          if (data.session_id) {
+            sessionStorage.setItem('lanzar_session_id', data.session_id);
+          }
           return signInWithCustomToken(data.custom_token);
         })
         .then(() => {
-          // Clean up URL
           window.history.replaceState({}, document.title, window.location.pathname);
           sessionStorage.removeItem('pkce_state');
           sessionStorage.removeItem('pkce_code_verifier');
           setIsExchanging(false);
         })
-        .catch(err => {
+        .catch((err) => {
           console.error('[AUTH] Exchange Error:', err);
-          setAuthError('Failed to complete login via Auth Hub.');
+          setAuthError(err.message || 'Failed to complete login via Auth Hub.');
           setIsExchanging(false);
           window.history.replaceState({}, document.title, window.location.pathname);
         });
