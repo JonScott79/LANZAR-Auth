@@ -813,6 +813,20 @@ async function runRulesTestSuite() {
       assertCheck(false, `RULE-S10: Failed with ${e.message}`);
     }
 
+    try {
+      await assertFails(aliceDb.doc('oauth_codes/mock_code_hash_123').get());
+      assertCheck(true, 'RULE-S11: Direct client read of /oauth_codes is DENIED');
+    } catch (e) {
+      assertCheck(false, `RULE-S11: Failed with ${e.message}`);
+    }
+
+    try {
+      await assertFails(aliceDb.doc('oauth_codes/mock_code_hash_123').set({ uid: 'alice_123', used: false }));
+      assertCheck(true, 'RULE-S12: Direct client write to /oauth_codes is DENIED');
+    } catch (e) {
+      assertCheck(false, `RULE-S12: Failed with ${e.message}`);
+    }
+
     // -------------------------------------------------------------
     // Test Category 5: Multi-Tenant Boundary Isolation & Anonymous Access Defense
     // -------------------------------------------------------------

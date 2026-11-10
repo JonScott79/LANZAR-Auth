@@ -82,6 +82,9 @@ service cloud.firestore {
     match /_lanzar_environment/{docId} {
       allow read, write: if false;
     }
+    match /oauth_codes/{codeHash} {
+      allow read, write: if false;
+    }
 
     // 5. Default deny all other paths
     match /{document=**} {

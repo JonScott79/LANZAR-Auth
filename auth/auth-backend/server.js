@@ -72,7 +72,7 @@ const {
 });
 
 const PORT = process.env.PORT || 4001;
-const HOST = process.env.HOST || '0.0.0.0';
+const HOST = process.env.HOST || '::';
 const server = app.listen(PORT, HOST, () => {
     console.log(`[LANZAR ID AUTH-BACKEND] Operations Center API listening on port ${PORT} (${HOST})`);
 });
