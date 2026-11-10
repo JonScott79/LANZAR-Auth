@@ -59,15 +59,21 @@ class SessionService {
     }
 
     /**
-     * Checks whether an individual session has been revoked.
-     * Enforced server-side on protected API requests.
+     * Resolves the server-side state of an individual session.
+     * Returns { active, reason } where reason is one of
+     * 'active' | 'revoked' | 'expired' | 'unknown_session' | 'check_failed'.
+     * Fails closed on lookup errors.
      */
-    async isSessionRevoked(uid, sessionId) {
-        if (!sessionId) return true;
+    async checkSession(uid, sessionId) {
+        if (!sessionId) return { active: false, reason: 'unknown_session' };
 
         const cached = sessionCache.get(sessionId);
         if (cached && Date.now() - cached.checkedAt < CACHE_TTL_MS) {
-            return cached.revoked;
+            return {
+                active: !cached.revoked,
+                reason: cached.reason || (cached.revoked ? 'revoked' : 'active'),
+                expiresAt: cached.expiresAt || null
+            };
         }
 
         try {
@@ -77,19 +83,35 @@ class SessionService {
 
             if (!doc.exists) {
                 // Unknown session is treated as revoked/invalid
-                sessionCache.set(sessionId, { revoked: true, checkedAt: Date.now() });
-                return true;
+                sessionCache.set(sessionId, { revoked: true, reason: 'unknown_session', checkedAt: Date.now() });
+                return { active: false, reason: 'unknown_session' };
             }
 
             const data = doc.data();
-            const isRevoked = data.revoked === true || (data.expiresAt && new Date(data.expiresAt) < new Date());
-            sessionCache.set(sessionId, { revoked: isRevoked, checkedAt: Date.now() });
-            return isRevoked;
+            let reason = 'active';
+            if (data.revoked === true) {
+                reason = 'revoked';
+            } else if (data.expiresAt && new Date(data.expiresAt) < new Date()) {
+                reason = 'expired';
+            }
+            const isRevoked = reason !== 'active';
+            const expiresAt = data.expiresAt || null;
+            sessionCache.set(sessionId, { revoked: isRevoked, reason, expiresAt, checkedAt: Date.now() });
+            return { active: !isRevoked, reason, expiresAt };
         } catch (err) {
             console.error(`[SESSION CHECK ERROR] Failed to check session ${sessionId}:`, err.message);
             // Fail closed on error for security
-            return true;
+            return { active: false, reason: 'check_failed' };
         }
+    }
+
+    /**
+     * Checks whether an individual session has been revoked.
+     * Enforced server-side on protected API requests.
+     */
+    async isSessionRevoked(uid, sessionId) {
+        const state = await this.checkSession(uid, sessionId);
+        return !state.active;
     }
 
     /**

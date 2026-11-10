@@ -93,8 +93,10 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
   app.use('/api/id', profileRouter);
 
   const deviceSessionRouter = createDeviceSessionRouter({
+    db,
     sessionService,
-    authenticateUserMiddleware: authMiddleware.authenticateUserMiddleware
+    authenticateUserMiddleware: authMiddleware.authenticateUserMiddleware,
+    isUserAdmin: authMiddleware.isUserAdmin
   });
   app.use('/api/id', deviceSessionRouter);
 

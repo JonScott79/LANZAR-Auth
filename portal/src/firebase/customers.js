@@ -128,9 +128,10 @@ export async function getAuthorizedCustomer(uid) {
 export async function getOrCreateAuthorizedCustomer(firebaseUser) {
   if (!firebaseUser?.uid) return null;
 
-  const existingCustomer = await getAuthorizedCustomer(firebaseUser.uid);
+  const existingCustomer = await getCustomer(firebaseUser.uid);
   if (existingCustomer) {
-    return existingCustomer;
+    // A profile exists: honor its status. Suspended / inactive accounts must never be auto-provisioned.
+    return existingCustomer.active === true ? existingCustomer : null;
   }
 
   // Auto-provision initial customer profile so new users never hit an access denied loop

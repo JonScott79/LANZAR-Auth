@@ -50,9 +50,21 @@ function createAuthMiddleware({ db, authAdmin, sessionService }) {
 
       // Server-enforced individual session check if session_id is in claims
       if (decoded.session_id && sessionService) {
-        const isRevoked = await sessionService.isSessionRevoked(decoded.uid, decoded.session_id);
-        if (isRevoked) {
-          return res.status(401).json({ error: 'session_revoked', error_description: 'This device session has been revoked.' });
+        req.sessionId = decoded.session_id;
+        if (typeof sessionService.checkSession === 'function') {
+          const state = await sessionService.checkSession(decoded.uid, decoded.session_id);
+          if (!state.active) {
+            if (state.reason === 'expired') {
+              return res.status(401).json({ error: 'session_expired', error_description: 'This device session has expired. Please sign in again.' });
+            }
+            return res.status(401).json({ error: 'session_revoked', error_description: 'This device session has been revoked.' });
+          }
+          req.sessionExpiresAt = state.expiresAt || null;
+        } else {
+          const isRevoked = await sessionService.isSessionRevoked(decoded.uid, decoded.session_id);
+          if (isRevoked) {
+            return res.status(401).json({ error: 'session_revoked', error_description: 'This device session has been revoked.' });
+          }
         }
       }
 
