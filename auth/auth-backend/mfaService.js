@@ -3,6 +3,7 @@
 // Universal compatibility with Google Authenticator, Microsoft Authenticator, 1Password, Bitwarden
 
 const crypto = require('crypto');
+const { resolveEnvironment } = require('./config/environments');
 
 // Known development secrets that MUST NOT be used in live/staging environments (LID-SEC-005)
 const KNOWN_DEV_MFA_SECRETS = [
@@ -15,29 +16,36 @@ const KNOWN_DEV_MFA_SECRETS = [
 // Explicit local development fallback secret (offline emulator testing only)
 const DEV_ONLY_FALLBACK_MFA_SECRET = 'dev_only_local_mfa_signing_secret_for_offline_testing_32b';
 
-function getMfaHmacSecret() {
-    const env = process.env.APP_ENV || 'development';
-    const secret = process.env.MFA_HMAC_SECRET;
+function getMfaHmacSecret(env = process.env) {
+    const effectiveEnv = resolveEnvironment(env);
+    const secret = env.MFA_HMAC_SECRET;
 
-    if (env === 'staging' || env === 'production') {
+    if (!effectiveEnv) {
+        throw new Error(`[MFA CONFIG FATAL] Environment configuration missing or unrecognized: APP_ENV="${env.APP_ENV || ''}", NODE_ENV="${env.NODE_ENV || ''}". Development fallback secret is forbidden in unverified environments.`);
+    }
+
+    if (effectiveEnv === 'staging' || effectiveEnv === 'production') {
         if (!secret) {
-            throw new Error(`[MFA CONFIG FATAL] MFA_HMAC_SECRET must be explicitly configured in APP_ENV=${env}`);
+            throw new Error(`[MFA CONFIG FATAL] MFA_HMAC_SECRET must be explicitly configured in APP_ENV=${effectiveEnv}`);
         }
         if (Buffer.byteLength(secret, 'utf8') < 32) {
-            throw new Error(`[MFA CONFIG FATAL] MFA_HMAC_SECRET must be at least 32 bytes in APP_ENV=${env}`);
+            throw new Error(`[MFA CONFIG FATAL] MFA_HMAC_SECRET must be at least 32 bytes in APP_ENV=${effectiveEnv}`);
         }
         if (
             KNOWN_DEV_MFA_SECRETS.includes(secret) ||
             secret.toLowerCase().includes('dev') ||
             secret.toLowerCase().includes('default')
         ) {
-            throw new Error(`[MFA CONFIG FATAL] Known development secret cannot be used for MFA_HMAC_SECRET in APP_ENV=${env}`);
+            throw new Error(`[MFA CONFIG FATAL] Known development secret cannot be used for MFA_HMAC_SECRET in APP_ENV=${effectiveEnv}`);
         }
         return secret;
     }
 
     // development or test environment:
     if (secret) {
+        if (Buffer.byteLength(secret, 'utf8') < 16) {
+            throw new Error(`[MFA CONFIG FATAL] MFA_HMAC_SECRET must be at least 16 bytes in APP_ENV=${effectiveEnv}`);
+        }
         return secret;
     }
     return DEV_ONLY_FALLBACK_MFA_SECRET;

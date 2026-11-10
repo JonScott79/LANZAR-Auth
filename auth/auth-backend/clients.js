@@ -2,7 +2,15 @@
 // Authorized OAuth 2.0 / PKCE client registry for LANZAR ecosystem
 // Approved clients: portal, tickets, threadline, ai (LID-ARCH-REV-015 / Phase E.1)
 
-const isProduction = process.env.NODE_ENV === 'production';
+const { resolveEnvironment } = require('./config/environments');
+
+function checkIsProduction() {
+    try {
+        return resolveEnvironment(process.env) === 'production';
+    } catch (_) {
+        return process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production';
+    }
+}
 
 const clients = {
     'portal': {
@@ -66,7 +74,7 @@ function getClient(clientId) {
     if (!client) return null;
 
     // In production, strictly enforce HTTPS and strip localhost redirect destinations
-    if (isProduction) {
+    if (checkIsProduction()) {
         return {
             ...client,
             redirectUris: client.redirectUris.filter(uri => !uri.startsWith('http://localhost') && !uri.startsWith('http://127.0.0.1'))

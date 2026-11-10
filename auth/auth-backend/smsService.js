@@ -4,8 +4,16 @@
 
 const crypto = require('crypto');
 const { FieldValue } = require('firebase-admin/firestore');
+const { resolveEnvironment } = require('./config/environments');
 
-const isProduction = process.env.NODE_ENV === 'production';
+function checkIsProduction() {
+    try {
+        return resolveEnvironment(process.env) === 'production';
+    } catch (_) {
+        return process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production';
+    }
+}
+
 const SMS_LIVE_ENABLED = process.env.SMS_LIVE_ENABLED === 'true';
 
 class SMSProvider {
@@ -31,7 +39,7 @@ class SMSProvider {
 class MockSMSProvider extends SMSProvider {
     async sendOTP({ phoneNumber, code, purpose }) {
         // SECURITY GUARD: Never expose plain OTP codes in production logs
-        if (!isProduction) {
+        if (!checkIsProduction()) {
             console.log(`[DEV/STAGING MOCK SMS] Target: ${phoneNumber} | Purpose: ${purpose} | Code: [${code}]`);
         } else {
             console.log(`[MOCK SMS] Simulated OTP dispatch to ${phoneNumber.slice(0, 4)}***${phoneNumber.slice(-2)} | Purpose: ${purpose}`);

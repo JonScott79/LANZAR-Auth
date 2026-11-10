@@ -28,6 +28,8 @@ const FIRESTORE_EMU_PORT = 8080;
 console.log('================================================================');
 console.log('  LANZAR Portal - Phase G.3 Application & Session Security Suite');
 console.log('  Timestamp: ' + new Date().toISOString());
+
+process.env.APP_ENV = process.env.APP_ENV || 'development';
 console.log('================================================================\n');
 
 const recordedUrls = [];

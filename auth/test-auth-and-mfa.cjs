@@ -16,6 +16,8 @@ if (process.env.APP_ENV === 'production' || process.env.NODE_ENV === 'production
   process.exit(1);
 }
 
+process.env.APP_ENV = process.env.APP_ENV || 'test';
+
 const db = new MockFirestore();
 const auth = new MockAuthAdmin();
 

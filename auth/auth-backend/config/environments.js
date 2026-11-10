@@ -122,4 +122,72 @@ const ENV_CONFIGS = {
   }
 };
 
-module.exports = { ENV_CONFIGS };
+/**
+ * Authoritative Environment Resolution (LID-VER-005)
+ * Strictly resolves and validates the execution environment across LANZAR ID services.
+ *
+ * Invariants:
+ * 1. An explicit production indicator (NODE_ENV=production or APP_ENV=production) never permits development defaults.
+ * 2. An explicit staging environment (NODE_ENV=staging or APP_ENV=staging) never permits development defaults.
+ * 3. Contradictory settings (e.g. NODE_ENV=production with APP_ENV=development) fail closed with an error.
+ * 4. Missing or unrecognized environments fail closed where security-sensitive behavior is involved.
+ * 5. Returns null if environment is missing and non-production/non-staging, preventing unverified fallback.
+ *
+ * @param {object} env - environment object (defaults to process.env)
+ * @returns {string|null} - 'production' | 'staging' | 'development' | 'test' | null
+ */
+function resolveEnvironment(env = process.env) {
+  const rawApp = env && env.APP_ENV !== undefined && env.APP_ENV !== null ? String(env.APP_ENV).trim() : '';
+  const rawNode = env && env.NODE_ENV !== undefined && env.NODE_ENV !== null ? String(env.NODE_ENV).trim() : '';
+
+  const appEnv = rawApp.toLowerCase() || null;
+  const nodeEnv = rawNode.toLowerCase() || null;
+
+  // 1. Contradictory setting checks (fail closed)
+  const isProdNode = nodeEnv === 'production';
+  const isStagingNode = nodeEnv === 'staging';
+  const isDevNode = nodeEnv === 'development' || nodeEnv === 'test';
+
+  const isProdApp = appEnv === 'production';
+  const isStagingApp = appEnv === 'staging';
+  const isDevApp = appEnv === 'development' || appEnv === 'test';
+
+  // Production NODE_ENV cannot pair with development/test APP_ENV
+  if (isProdNode && isDevApp) {
+    throw new Error(`[ENV CONFIG FATAL] Contradictory environment configuration: NODE_ENV is "production" but APP_ENV is "${rawApp}"`);
+  }
+
+  // Staging NODE_ENV cannot pair with development/test APP_ENV
+  if (isStagingNode && isDevApp) {
+    throw new Error(`[ENV CONFIG FATAL] Contradictory environment configuration: NODE_ENV is "staging" but APP_ENV is "${rawApp}"`);
+  }
+
+  // Development/test NODE_ENV cannot pair with production/staging APP_ENV
+  if (isDevNode && (isProdApp || isStagingApp)) {
+    throw new Error(`[ENV CONFIG FATAL] Contradictory environment configuration: NODE_ENV is "${rawNode}" but APP_ENV is "${rawApp}"`);
+  }
+
+  // 2. Explicit APP_ENV has highest specificity if valid
+  if (appEnv) {
+    if (!ENV_CONFIGS[appEnv]) {
+      throw new Error(`[ENV CONFIG FATAL] Unrecognized APP_ENV: "${rawApp}"`);
+    }
+    return appEnv;
+  }
+
+  // 3. If APP_ENV is missing, evaluate NODE_ENV
+  // Explicit production indicator MUST NOT permit development defaults
+  if (isProdNode) {
+    return 'production';
+  }
+
+  if (isStagingNode) {
+    return 'staging';
+  }
+
+  // If neither APP_ENV nor NODE_ENV is production/staging,
+  // return null to indicate environment is unverified / missing
+  return null;
+}
+
+module.exports = { ENV_CONFIGS, resolveEnvironment };

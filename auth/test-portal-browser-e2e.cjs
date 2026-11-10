@@ -33,6 +33,8 @@ console.log('  Engine: Real Google Chrome Headless via CDP (UI-to-UI)');
 console.log(`  Timestamp: ${new Date().toISOString()}`);
 console.log('================================================================\n');
 
+process.env.APP_ENV = process.env.APP_ENV || 'development';
+
 let passCount = 0;
 let failCount = 0;
 const recordedUrls = [];
