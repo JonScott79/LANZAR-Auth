@@ -48,26 +48,49 @@ function createAuthMiddleware({ db, authAdmin, sessionService }) {
         return res.status(403).json({ error: 'account_suspended', error_description: 'This account has been suspended.' });
       }
 
-      // Server-enforced individual session check if session_id is in claims
-      if (decoded.session_id && sessionService) {
-        req.sessionId = decoded.session_id;
-        if (typeof sessionService.checkSession === 'function') {
-          const state = await sessionService.checkSession(decoded.uid, decoded.session_id);
-          if (!state.active) {
-            if (state.reason === 'expired') {
-              return res.status(401).json({ error: 'session_expired', error_description: 'This device session has expired. Please sign in again.' });
-            }
-            return res.status(401).json({ error: 'session_revoked', error_description: 'This device session has been revoked.' });
-          }
-          req.sessionExpiresAt = state.expiresAt || null;
-        } else {
-          const isRevoked = await sessionService.isSessionRevoked(decoded.uid, decoded.session_id);
-          if (isRevoked) {
-            return res.status(401).json({ error: 'session_revoked', error_description: 'This device session has been revoked.' });
-          }
-        }
+      // Mandatory LANZAR ID Session Enforcement (LID-SEC-004)
+      if (!decoded.session_id || typeof decoded.session_id !== 'string' || !decoded.session_id.trim()) {
+        return res.status(401).json({
+          error: 'missing_session',
+          error_description: 'Authentication token is missing a valid LANZAR ID session identifier.'
+        });
       }
 
+      if (!sessionService) {
+        console.error('[AUTH ERROR] SessionService unavailable during authentication check');
+        return res.status(500).json({
+          error: 'server_error',
+          error_description: 'Session verification service unavailable.'
+        });
+      }
+
+      req.sessionId = decoded.session_id;
+
+      // Validate session against authoritative server-side record with UID binding
+      const state = typeof sessionService.checkSession === 'function'
+        ? await sessionService.checkSession(decoded.uid, decoded.session_id)
+        : { active: !(await sessionService.isSessionRevoked(decoded.uid, decoded.session_id)), reason: 'active' };
+
+      if (!state.active) {
+        if (state.reason === 'expired') {
+          return res.status(401).json({
+            error: 'session_expired',
+            error_description: 'This device session has expired. Please sign in again.'
+          });
+        }
+        if (state.reason === 'uid_mismatch') {
+          return res.status(401).json({
+            error: 'session_mismatch',
+            error_description: 'Session does not belong to the authenticated user.'
+          });
+        }
+        return res.status(401).json({
+          error: 'session_revoked',
+          error_description: 'This device session has been revoked or is invalid.'
+        });
+      }
+
+      req.sessionExpiresAt = state.expiresAt || null;
       next();
     } catch (err) {
       if (err.code === 'auth/id-token-revoked') {

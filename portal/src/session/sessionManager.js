@@ -27,6 +27,8 @@ const INVALID_SESSION_ERRORS = {
   session_expired: 'expired',
   invalid_token: 'invalid',
   unauthorized: 'invalid',
+  missing_session: 'no_session',
+  session_mismatch: 'invalid',
 }
 
 export const SESSION_MESSAGES = {

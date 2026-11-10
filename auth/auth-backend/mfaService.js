@@ -4,7 +4,45 @@
 
 const crypto = require('crypto');
 
-const MFA_SECRET_KEY = process.env.MFA_HMAC_SECRET || 'lanzar_mfa_signing_key_secure_2026';
+// Known development secrets that MUST NOT be used in live/staging environments (LID-SEC-005)
+const KNOWN_DEV_MFA_SECRETS = [
+    'lanzar_mfa_signing_key_secure_2026',
+    'default_dev_secret',
+    'dev_mfa_signing_key_secure_2026',
+    'dev_only_local_mfa_signing_secret_for_offline_testing_32b'
+];
+
+// Explicit local development fallback secret (offline emulator testing only)
+const DEV_ONLY_FALLBACK_MFA_SECRET = 'dev_only_local_mfa_signing_secret_for_offline_testing_32b';
+
+function getMfaHmacSecret() {
+    const env = process.env.APP_ENV || 'development';
+    const secret = process.env.MFA_HMAC_SECRET;
+
+    if (env === 'staging' || env === 'production') {
+        if (!secret) {
+            throw new Error(`[MFA CONFIG FATAL] MFA_HMAC_SECRET must be explicitly configured in APP_ENV=${env}`);
+        }
+        if (Buffer.byteLength(secret, 'utf8') < 32) {
+            throw new Error(`[MFA CONFIG FATAL] MFA_HMAC_SECRET must be at least 32 bytes in APP_ENV=${env}`);
+        }
+        if (
+            KNOWN_DEV_MFA_SECRETS.includes(secret) ||
+            secret.toLowerCase().includes('dev') ||
+            secret.toLowerCase().includes('default')
+        ) {
+            throw new Error(`[MFA CONFIG FATAL] Known development secret cannot be used for MFA_HMAC_SECRET in APP_ENV=${env}`);
+        }
+        return secret;
+    }
+
+    // development or test environment:
+    if (secret) {
+        return secret;
+    }
+    return DEV_ONLY_FALLBACK_MFA_SECRET;
+}
+
 const MFA_ENCRYPTION_KEY = process.env.MFA_ENCRYPTION_KEY || crypto.createHash('sha256').update('lanzar_totp_aes_pepper_2026').digest(); // 32 bytes
 
 // Cache of consumed (uid + timeStep) to prevent replay of the same 6-digit code within its 30-second validity window
@@ -209,7 +247,8 @@ function createMfaSignedToken(payload, expiresInMs = 300000) {
         exp: Date.now() + expiresInMs
     };
     const body = Buffer.from(JSON.stringify(data)).toString('base64url');
-    const sig = crypto.createHmac('sha256', MFA_SECRET_KEY).update(body).digest('base64url');
+    const secret = getMfaHmacSecret();
+    const sig = crypto.createHmac('sha256', secret).update(body).digest('base64url');
     return `${body}.${sig}`;
 }
 
@@ -218,7 +257,8 @@ function verifyMfaSignedToken(token) {
     const parts = token.split('.');
     if (parts.length !== 2) return null;
     const [body, sig] = parts;
-    const expectedSig = crypto.createHmac('sha256', MFA_SECRET_KEY).update(body).digest('base64url');
+    const secret = getMfaHmacSecret();
+    const expectedSig = crypto.createHmac('sha256', secret).update(body).digest('base64url');
     if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) {
         return null;
     }
@@ -232,6 +272,8 @@ function verifyMfaSignedToken(token) {
 }
 
 module.exports = {
+    getMfaHmacSecret,
+    KNOWN_DEV_MFA_SECRETS,
     generateBase32Secret,
     generateTOTP,
     verifyTOTP,

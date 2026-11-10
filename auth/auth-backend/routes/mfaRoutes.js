@@ -17,6 +17,11 @@ const {
   verifyMfaSignedToken
 } = require('../mfaService');
 const { recordSecurityEvent } = require('../auditService');
+const {
+  mfaVerifyRateLimitMiddleware,
+  recordMfaFailure,
+  clearMfaFailures
+} = require('../middleware/rateLimiter');
 
 function createMfaRouter({ db, authAdmin, isUserAdmin }) {
   const router = express.Router();
@@ -118,7 +123,7 @@ function createMfaRouter({ db, authAdmin, isUserAdmin }) {
     }
   });
 
-  router.post('/verify', async (req, res) => {
+  router.post('/verify', mfaVerifyRateLimitMiddleware, async (req, res) => {
     try {
       const { mfaSession, code, method } = req.body;
       if (!mfaSession || !code) return res.status(400).json({ error: 'missing_parameters' });
@@ -158,8 +163,12 @@ function createMfaRouter({ db, authAdmin, isUserAdmin }) {
       }
 
       if (!verified) {
+        recordMfaFailure(uid, method === 'recovery' ? 'recovery' : 'totp');
         return res.status(401).json({ error: 'invalid_code', error_description: 'The code provided is invalid or expired.' });
       }
+
+      // Verification succeeded: reset failed attempt counter for this method
+      clearMfaFailures(uid, method === 'recovery' ? 'recovery' : 'totp');
 
       const mfaProof = createMfaSignedToken({
         uid,

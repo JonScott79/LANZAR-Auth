@@ -361,8 +361,12 @@ async function run() {
       emulatorProcess = spawn('npx.cmd', ['firebase-tools@13.31.0', 'emulators:start', '--only', 'auth,firestore', '--project', 'demo-lanzar-dev'], {
         cwd: path.resolve(__dirname, '..'), shell: true, stdio: 'pipe'
       });
-      for (let i = 0; i < 90; i++) {
-        if ((await isPortListening(AUTH_EMU_PORT)) && (await isPortListening(FIRESTORE_EMU_PORT))) break;
+      if (emulatorProcess.stdout) emulatorProcess.stdout.resume();
+      if (emulatorProcess.stderr) emulatorProcess.stderr.resume();
+      for (let i = 0; i < 120; i++) {
+        const a = await isPortListening(AUTH_EMU_PORT);
+        const f = await isPortListening(FIRESTORE_EMU_PORT);
+        if (a && f) break;
         await sleep(500);
       }
     }
@@ -465,8 +469,15 @@ async function run() {
     assertTest('SEC-A5-pre: Forged admin claims present in client token', forgedPayload.admin === true && forgedPayload.role === 'ADMIN');
     const forgedAdmin = await jfetch(`${API}/api/admin/id/telemetry`, { headers: bearer(forgedToken) });
     const forgedValidate = await jfetch(`${API}/api/id/session/validate`, { headers: bearer(forgedToken) });
-    assertTest('SEC-A5: Forged admin claims never grant administrator access (403, is_admin=false)', forgedAdmin.status === 403 && forgedValidate.body.is_admin === false);
-    assertTest('SEC-A5b: Token without LANZAR ID session reports session_id=null (Portal treats as unauthenticated)', forgedValidate.status === 200 && forgedValidate.body.session_id === null);
+    // Without session claim, admin & validate APIs fail closed with 401 missing_session
+    assertTest('SEC-A5-nosess: Token without LANZAR ID session rejected by admin API (401 missing_session)', forgedAdmin.status === 401 && forgedAdmin.body.error === 'missing_session');
+    assertTest('SEC-A5b: Token without LANZAR ID session rejected by validate API (401 missing_session)', forgedValidate.status === 401 && forgedValidate.body.error === 'missing_session');
+
+    // With a valid session, forged client claims still never grant administrator access
+    const forgedWithSess = await lanzarSession(custG);
+    const forgedWithSessAdmin = await jfetch(`${API}/api/admin/id/telemetry`, { headers: bearer(forgedWithSess.idToken) });
+    const forgedWithSessValidate = await jfetch(`${API}/api/id/session/validate`, { headers: bearer(forgedWithSess.idToken) });
+    assertTest('SEC-A5: Forged admin claims never grant administrator access (403, is_admin=false)', forgedWithSessAdmin.status === 403 && forgedWithSessValidate.body.is_admin === false);
 
     // 1.6 Individual session revocation
     const sessB1 = await lanzarSession(custB);

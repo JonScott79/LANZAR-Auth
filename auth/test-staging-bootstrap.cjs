@@ -38,6 +38,7 @@ function runStagingBootstrapTests() {
     }),
     EXPECTED_SA_EMAIL: 'lanzar-auth-api@lanzar-95ae3-dev.iam.gserviceaccount.com',
     SESSION_SIGNING_SECRET: 'test_session_signing_secret_at_least_32_bytes_long_123456',
+    MFA_HMAC_SECRET: 'staging_mfa_hmac_secret_crypto_safe_random_hex_32_bytes_min',
     FEATURE_STRIPE: 'disabled'
   };
 
@@ -168,6 +169,53 @@ function runStagingBootstrapTests() {
     recordTest('STG-BOOT-7', 'Staging origin matrix contains exclusively staging/dev endpoints with zero prod contamination', hasDevOrigins && hasZeroProdOrigins);
   } catch (e) {
     recordTest('STG-BOOT-7', 'Staging origin matrix contains exclusively staging/dev endpoints with zero prod contamination', false, e.message);
+  }
+
+  // STG-BOOT-8: Fail-Closed on Missing MFA_HMAC_SECRET in Staging (LID-SEC-005)
+  try {
+    let caughtMissing = false;
+    try {
+      const envWithoutMfa = { ...VALID_STAGING_ENV };
+      delete envWithoutMfa.MFA_HMAC_SECRET;
+      bootstrap(envWithoutMfa);
+    } catch (e) {
+      caughtMissing = e.message.includes('MFA_HMAC_SECRET is required');
+    }
+    recordTest('STG-BOOT-8', 'Staging fails closed when MFA_HMAC_SECRET is omitted', caughtMissing);
+  } catch (e) {
+    recordTest('STG-BOOT-8', 'Staging fails closed when MFA_HMAC_SECRET is omitted', false, e.message);
+  }
+
+  // STG-BOOT-9: Fail-Closed on Weak (<32 bytes) MFA_HMAC_SECRET in Staging (LID-SEC-005)
+  try {
+    let caughtWeak = false;
+    try {
+      bootstrap({
+        ...VALID_STAGING_ENV,
+        MFA_HMAC_SECRET: 'too_short_mfa_secret'
+      });
+    } catch (e) {
+      caughtWeak = e.message.includes('MFA_HMAC_SECRET must be at least 32 bytes');
+    }
+    recordTest('STG-BOOT-9', 'Staging requires minimum 32-character MFA_HMAC_SECRET', caughtWeak);
+  } catch (e) {
+    recordTest('STG-BOOT-9', 'Staging requires minimum 32-character MFA_HMAC_SECRET', false, e.message);
+  }
+
+  // STG-BOOT-10: Fail-Closed on Known Development/Default Secret in Staging (LID-SEC-005)
+  try {
+    let caughtDefault = false;
+    try {
+      bootstrap({
+        ...VALID_STAGING_ENV,
+        MFA_HMAC_SECRET: 'lanzar_mfa_signing_key_secure_2026'
+      });
+    } catch (e) {
+      caughtDefault = e.message.includes('cannot use a development or default secret');
+    }
+    recordTest('STG-BOOT-10', 'Staging rejects default development MFA secret', caughtDefault);
+  } catch (e) {
+    recordTest('STG-BOOT-10', 'Staging rejects default development MFA secret', false, e.message);
   }
 
   // ----------------------------------------------------

@@ -167,6 +167,36 @@ function bootstrap(env = process.env, options = { exitOnError: false }) {
     fatal('SESSION_SIGNING_SECRET must be at least 32 bytes (256 bits)');
   }
 
+  // 4b. MFA HMAC secret verification (LID-SEC-005)
+  const KNOWN_DEV_MFA_SECRETS = [
+    'lanzar_mfa_signing_key_secure_2026',
+    'default_dev_secret',
+    'dev_mfa_signing_key_secure_2026',
+    'dev_only_local_mfa_signing_secret_for_offline_testing_32b'
+  ];
+
+  const mfaSecret = env.MFA_HMAC_SECRET;
+  if (appEnv === 'staging' || appEnv === 'production') {
+    if (!mfaSecret) {
+      fatal(`MFA_HMAC_SECRET is required for APP_ENV=${appEnv}`);
+    }
+    if (Buffer.byteLength(mfaSecret, 'utf8') < 32) {
+      fatal(`MFA_HMAC_SECRET must be at least 32 bytes (256 bits) in APP_ENV=${appEnv}`);
+    }
+    if (
+      KNOWN_DEV_MFA_SECRETS.includes(mfaSecret) ||
+      mfaSecret.toLowerCase().includes('dev') ||
+      mfaSecret.toLowerCase().includes('default')
+    ) {
+      fatal(`MFA_HMAC_SECRET cannot use a development or default secret in APP_ENV=${appEnv}`);
+    }
+  } else {
+    // development or test
+    if (mfaSecret && Buffer.byteLength(mfaSecret, 'utf8') < 16) {
+      fatal(`MFA_HMAC_SECRET, if provided, must be at least 16 bytes in APP_ENV=${appEnv}`);
+    }
+  }
+
   // 5. Stripe conditional validation
   const featureStripe = env.FEATURE_STRIPE;
   if (featureStripe === 'enabled') {

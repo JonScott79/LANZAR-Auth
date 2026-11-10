@@ -385,42 +385,18 @@ async function run() {
 
     // Helper: Reset Portal client to unauthenticated state
     async function resetPortalSession() {
-      await mainPage.send('Page.navigate', { url: 'http://localhost:5173/' });
-      await mainPage.waitFor(`Boolean(document.getElementById('btnSignInModal') || document.querySelector('.portal-app'))`, 8000);
-      await mainPage.eval(`
-        (async () => {
-          try { sessionStorage.clear(); } catch (_) {}
-          try { localStorage.clear(); } catch (_) {}
-          try {
-            const { auth } = await import('/src/firebase/auth.js');
-            await auth.signOut();
-          } catch (_) {}
-        })()
-      `);
-      // Reload page to get clean fresh mount
+      try {
+        await mainPage.send('Storage.clearDataForOrigin', { origin: 'http://localhost:5173', storageTypes: 'all' });
+      } catch (_) {}
       await mainPage.send('Page.navigate', { url: 'http://localhost:5173/' });
       await mainPage.waitFor(`Boolean(document.getElementById('btnSignInModal'))`, 8000);
     }
 
     // Helper: Reset Auth Hub to unauthenticated state
     async function resetAuthHubSession() {
-      const res = await fetch(`http://127.0.0.1:9222/json/new?${encodeURIComponent('http://localhost:4000/')}`, { method: 'PUT' });
-      const target = await res.json();
-      const authPage = new CDPPage(target.webSocketDebuggerUrl);
-      await authPage.connect();
-      await authPage.waitFor(`Boolean(document.querySelector('body'))`, 5000);
-      await authPage.eval(`
-        (async () => {
-          try { sessionStorage.clear(); } catch (_) {}
-          try { localStorage.clear(); } catch (_) {}
-          try {
-            const { auth } = await import('/src/firebase/auth.js');
-            await auth.signOut();
-          } catch (_) {}
-        })()
-      `);
-      authPage.close();
-      await fetch(`http://127.0.0.1:9222/json/close/${target.id}`, { method: 'PUT' }).catch(() => {});
+      try {
+        await mainPage.send('Storage.clearDataForOrigin', { origin: 'http://localhost:4000', storageTypes: 'all' });
+      } catch (_) {}
     }
 
     // =============================================================

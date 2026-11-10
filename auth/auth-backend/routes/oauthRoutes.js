@@ -5,11 +5,12 @@ const express = require('express');
 const crypto = require('crypto');
 const { getClient } = require('../clients');
 const { createMfaSignedToken, verifyMfaSignedToken } = require('../mfaService');
+const { oauthAuthorizeLimiter, oauthExchangeLimiter } = require('../middleware/rateLimiter');
 
 function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdmin, reconcileCustomerAccount }) {
   const router = express.Router();
 
-  router.post('/authorize', async (req, res) => {
+  router.post('/authorize', oauthAuthorizeLimiter, async (req, res) => {
     try {
       const { idToken, client_id, redirect_uri, state, code_challenge, code_challenge_method, mfa_proof } = req.body;
       if (!idToken || !client_id || !redirect_uri || !state || !code_challenge) {
@@ -114,7 +115,7 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
     }
   });
 
-  router.post('/exchange', async (req, res) => {
+  router.post('/exchange', oauthExchangeLimiter, async (req, res) => {
     try {
       const { code, client_id, redirect_uri, code_verifier } = req.body;
       if (!code || !client_id || !redirect_uri || !code_verifier) {

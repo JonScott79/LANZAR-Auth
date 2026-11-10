@@ -6,7 +6,7 @@ const { FieldValue } = require('firebase-admin/firestore');
 const { recordSecurityEvent } = require('./auditService');
 
 // In-memory LRU-style cache for fast revocation checks to minimize Firestore reads
-// Map<sessionId, { revoked: boolean, checkedAt: number }>
+// Map<`${uid}:${sessionId}`, { uid: string, revoked: boolean, reason: string, expiresAt: string|null, checkedAt: number }>
 const sessionCache = new Map();
 const CACHE_TTL_MS = 30000; // 30 seconds
 
@@ -14,6 +14,13 @@ class SessionService {
     constructor(db, authAdmin) {
         this.db = db;
         this.authAdmin = authAdmin;
+    }
+
+    /**
+     * Testing/administrative helper to clear process-local session cache
+     */
+    clearCache() {
+        sessionCache.clear();
     }
 
     /**
@@ -43,8 +50,14 @@ class SessionService {
             .collection('sessions').doc(sessionId)
             .set(sessionDoc);
 
-        // Pre-warm cache
-        sessionCache.set(sessionId, { revoked: false, checkedAt: Date.now() });
+        // Pre-warm cache with UID binding
+        sessionCache.set(`${uid}:${sessionId}`, {
+            uid,
+            revoked: false,
+            reason: 'active',
+            expiresAt: expiresAt.toISOString(),
+            checkedAt: Date.now()
+        });
 
         await recordSecurityEvent(this.db, {
             actorUid: uid,
@@ -65,10 +78,16 @@ class SessionService {
      * Fails closed on lookup errors.
      */
     async checkSession(uid, sessionId) {
-        if (!sessionId) return { active: false, reason: 'unknown_session' };
+        if (!uid || typeof uid !== 'string' || !sessionId || typeof sessionId !== 'string') {
+            return { active: false, reason: 'unknown_session' };
+        }
 
-        const cached = sessionCache.get(sessionId);
+        const cacheKey = `${uid}:${sessionId}`;
+        const cached = sessionCache.get(cacheKey);
         if (cached && Date.now() - cached.checkedAt < CACHE_TTL_MS) {
+            if (cached.uid && cached.uid !== uid) {
+                return { active: false, reason: 'uid_mismatch' };
+            }
             return {
                 active: !cached.revoked,
                 reason: cached.reason || (cached.revoked ? 'revoked' : 'active'),
@@ -82,12 +101,37 @@ class SessionService {
                 .get();
 
             if (!doc.exists) {
+                // Check if this session exists under another user to detect cross-user hijacking
+                try {
+                    const crossUserSnapshot = await this.db.collectionGroup('sessions')
+                        .where('sessionId', '==', sessionId)
+                        .limit(1)
+                        .get();
+
+                    if (!crossUserSnapshot.empty) {
+                        const foreignDoc = crossUserSnapshot.docs[0].data();
+                        if (foreignDoc.uid && foreignDoc.uid !== uid) {
+                            sessionCache.set(cacheKey, { uid, revoked: true, reason: 'uid_mismatch', checkedAt: Date.now() });
+                            return { active: false, reason: 'uid_mismatch' };
+                        }
+                    }
+                } catch (cgErr) {
+                    // collectionGroup fallback
+                }
+
                 // Unknown session is treated as revoked/invalid
-                sessionCache.set(sessionId, { revoked: true, reason: 'unknown_session', checkedAt: Date.now() });
+                sessionCache.set(cacheKey, { uid, revoked: true, reason: 'unknown_session', checkedAt: Date.now() });
                 return { active: false, reason: 'unknown_session' };
             }
 
             const data = doc.data();
+
+            // Explicit UID-binding verification against document payload
+            if (data.uid && data.uid !== uid) {
+                sessionCache.set(cacheKey, { uid, revoked: true, reason: 'uid_mismatch', checkedAt: Date.now() });
+                return { active: false, reason: 'uid_mismatch' };
+            }
+
             let reason = 'active';
             if (data.revoked === true) {
                 reason = 'revoked';
@@ -96,7 +140,7 @@ class SessionService {
             }
             const isRevoked = reason !== 'active';
             const expiresAt = data.expiresAt || null;
-            sessionCache.set(sessionId, { revoked: isRevoked, reason, expiresAt, checkedAt: Date.now() });
+            sessionCache.set(cacheKey, { uid, revoked: isRevoked, reason, expiresAt, checkedAt: Date.now() });
             return { active: !isRevoked, reason, expiresAt };
         } catch (err) {
             console.error(`[SESSION CHECK ERROR] Failed to check session ${sessionId}:`, err.message);
@@ -128,7 +172,12 @@ class SessionService {
             revokedBy: revokedBy || uid
         });
 
-        sessionCache.set(sessionId, { revoked: true, checkedAt: Date.now() });
+        sessionCache.set(`${uid}:${sessionId}`, {
+            uid,
+            revoked: true,
+            reason: 'revoked',
+            checkedAt: Date.now()
+        });
 
         await recordSecurityEvent(this.db, {
             actorUid: revokedBy || uid,
@@ -178,7 +227,12 @@ class SessionService {
                 revokedAt: nowIso,
                 revokedBy: revokedBy || uid
             });
-            sessionCache.set(doc.id, { revoked: true, checkedAt: Date.now() });
+            sessionCache.set(`${uid}:${doc.id}`, {
+                uid,
+                revoked: true,
+                reason: 'revoked',
+                checkedAt: Date.now()
+            });
         });
 
         if (!sessionsSnapshot.empty) {
