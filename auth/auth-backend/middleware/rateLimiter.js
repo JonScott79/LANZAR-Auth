@@ -7,6 +7,7 @@
 // augmented by a shared distributed atomic store (e.g. Redis sliding window or Cloud Armor)
 // to prevent attackers from distributing brute-force attempts across sibling nodes.
 
+const net = require('net');
 const { verifyMfaSignedToken } = require('../mfaService');
 
 // Map<key, { count?: number, resetAt: number, failedCount?: number } >
@@ -57,14 +58,54 @@ const cleanupTimer = setInterval(() => {
 }, 60000);
 if (cleanupTimer.unref) cleanupTimer.unref();
 
+/**
+ * Resolves and strictly validates the genuine client IP address for rate limiting.
+ *
+ * Railway Ingress Contract:
+ * Railway terminates TLS at its public edge router and authoritatively sets
+ * the connecting client's genuine public IP in the `X-Real-IP` header.
+ *
+ * Security Requirements:
+ * 1. Read X-Real-IP and strictly validate with Node's net.isIP().
+ * 2. Do NOT use req.ip or parse arbitrary/spoofed X-Forwarded-For values.
+ * 3. Fallback to direct socket remoteAddress (validated with net.isIP()),
+ *    normalizing IPv4-mapped IPv6 strings (::ffff:127.0.0.1 -> 127.0.0.1).
+ * 4. Fallback to '127.0.0.1' if missing, empty, or malformed.
+ */
 function getClientIp(req) {
-  // Use Express's validated req.ip when trust proxy is configured (LID-VER-003),
-  // falling back to socket remoteAddress. Never trust raw unvalidated X-Forwarded-For headers.
-  return (
-    req.ip ||
-    req.socket?.remoteAddress ||
-    '127.0.0.1'
-  );
+  if (!req) return '127.0.0.1';
+
+  // 1. Authoritative Railway public ingress header
+  const rawRealIp = req.headers && req.headers['x-real-ip'];
+  if (typeof rawRealIp === 'string') {
+    const trimmed = rawRealIp.trim();
+    if (net.isIP(trimmed)) {
+      return trimmed;
+    }
+  }
+
+  // 2. Fallback to direct socket connection remoteAddress
+  const socketAddr = req.socket?.remoteAddress;
+  if (typeof socketAddr === 'string') {
+    const trimmed = socketAddr.trim();
+    const normalized = trimmed.startsWith('::ffff:') ? trimmed.slice(7) : trimmed;
+    if (net.isIP(normalized)) {
+      return normalized;
+    }
+  }
+
+  return '127.0.0.1';
+}
+
+/**
+ * Explicit HTTPS connection evaluation.
+ * Railway public edge terminates TLS and supplies X-Forwarded-Proto: https.
+ * Handled explicitly without globally trusting arbitrary forwarding headers.
+ */
+function isRequestSecure(req) {
+  if (!req) return false;
+  if (req.secure || req.socket?.encrypted) return true;
+  return Boolean(req.headers && req.headers['x-forwarded-proto'] === 'https');
 }
 
 /**
@@ -334,6 +375,7 @@ module.exports = {
   clearMfaFailures,
   resetRateLimits,
   getClientIp,
+  isRequestSecure,
   setMaxEntries,
   getRateLimitStoreSize
 };

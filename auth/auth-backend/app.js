@@ -29,8 +29,14 @@ const { createSessionRouter } = require('./routes/sessionRoutes');
 function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
   const app = express();
 
-  // Trusted Reverse Proxy Configuration (LID-VER-003)
-  const trustProxySetting = config?.trustProxy || process.env.TRUST_PROXY || 'loopback, linklocal, uniquelocal';
+  // Express Reverse-Proxy Configuration:
+  // Do NOT blindly set 'trust proxy' to true, 1, or guessed Railway proxy subnets.
+  // Railway does not publish stable proxy source ranges or a fixed hop-count contract.
+  // By default, keep Express trust proxy disabled (false) to avoid trusting arbitrary forwarding headers.
+  // Rate limiting and client IP resolution are handled authoritatively via X-Real-IP in getClientIp().
+  const trustProxySetting = config?.trustProxy !== undefined
+    ? config.trustProxy
+    : (process.env.TRUST_PROXY !== undefined ? process.env.TRUST_PROXY : false);
   app.set('trust proxy', trustProxySetting);
 
   app.use(express.json());

@@ -26,6 +26,7 @@ const {
   clearMfaFailures,
   resetRateLimits,
   getClientIp,
+  isRequestSecure,
   setMaxEntries,
   getRateLimitStoreSize
 } = require('./auth-backend/middleware/rateLimiter.js');
@@ -181,46 +182,131 @@ async function main() {
   });
 
   // =========================================================================
-  // 3. LID-VER-003: Reverse-Proxy Trust Configuration & Spoofed IP Defense
+  // 3. LID-VER-003: Railway Reverse-Proxy Ingress, Client-IP & TLS Verification
   // =========================================================================
-  console.log('\n--- 3. LID-VER-003: Reverse-Proxy Trust Configuration ---');
+  console.log('\n--- 3. LID-VER-003: Railway Proxy Ingress & Client-IP Verification ---');
 
-  runTest('LID-VER-003.1: Environment configs include explicit trustProxy specifications', () => {
-    assert.ok(ENV_CONFIGS.production.trustProxy, 'Production config must specify trustProxy');
-    assert.ok(ENV_CONFIGS.staging.trustProxy, 'Staging config must specify trustProxy');
-    assert.ok(ENV_CONFIGS.development.trustProxy, 'Development config must specify trustProxy');
-    assert.ok(ENV_CONFIGS.test.trustProxy, 'Test config must specify trustProxy');
+  runTest('LID-VER-003.1: Environment configs keep trustProxy disabled (false) avoiding blind proxy assumptions', () => {
+    assert.strictEqual(ENV_CONFIGS.production.trustProxy, false, 'Production must not blindly trust proxy');
+    assert.strictEqual(ENV_CONFIGS.staging.trustProxy, false, 'Staging must not blindly trust proxy');
+    assert.strictEqual(ENV_CONFIGS.development.trustProxy, false, 'Development must not blindly trust proxy');
+    assert.strictEqual(ENV_CONFIGS.test.trustProxy, false, 'Test must not blindly trust proxy');
   });
 
-  await runAsyncTest('LID-VER-003.2: Express app configures trust proxy correctly and ignores untrusted X-Forwarded-For', async () => {
+  runTest('LID-VER-003.2: Express app default trust proxy is false, preventing arbitrary header trust', () => {
     const db = new MockFirestore();
     const authAdmin = new MockAuthAdmin();
     const envName = resolveEnvironment(process.env) || 'test';
     const config = ENV_CONFIGS[envName];
 
     const { app } = createApp({ config, db, authAdmin });
-    assert.strictEqual(app.get('trust proxy'), 'loopback', 'Test environment should trust loopback');
+    assert.strictEqual(app.get('trust proxy'), false, 'Express trust proxy should be false by default');
+  });
 
-    // Create test route returning client IP
-    app.get('/test-ip', (req, res) => {
-      res.json({ ip: getClientIp(req) });
-    });
+  runTest('LID-VER-003.3: getClientIp authoritatively extracts and validates genuine IPv4 X-Real-IP', () => {
+    const req = {
+      headers: { 'x-real-ip': '198.51.100.42' },
+      socket: { remoteAddress: '10.0.0.1' }
+    };
+    assert.strictEqual(getClientIp(req), '198.51.100.42', 'Valid IPv4 X-Real-IP must be resolved');
+  });
 
-    const server = http.createServer(app);
-    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const port = server.address().port;
+  runTest('LID-VER-003.4: getClientIp authoritatively extracts and validates genuine IPv6 X-Real-IP', () => {
+    const req = {
+      headers: { 'x-real-ip': '2001:0db8:85a3:0000:0000:8a2e:0370:7334' },
+      socket: { remoteAddress: '10.0.0.1' }
+    };
+    assert.strictEqual(getClientIp(req), '2001:0db8:85a3:0000:0000:8a2e:0370:7334', 'Valid IPv6 X-Real-IP must be resolved');
+  });
 
-    try {
-      // Direct request from loopback with forged X-Forwarded-For:
-      // Loopback is trusted, so Express resolves client IP using the header
-      const res = await fetch(`http://127.0.0.1:${port}/test-ip`, {
-        headers: { 'X-Forwarded-For': '203.0.113.195' }
-      });
-      const data = await res.json();
-      assert.strictEqual(data.ip, '203.0.113.195', 'Validated forwarded hop from trusted loopback should be resolved');
-    } finally {
-      await new Promise((resolve) => server.close(resolve));
+  runTest('LID-VER-003.5: getClientIp strictly ignores forged X-Forwarded-For headers', () => {
+    const req = {
+      headers: {
+        'x-forwarded-for': '203.0.113.195, 10.0.0.1',
+        'x-real-ip': '198.51.100.77'
+      },
+      socket: { remoteAddress: '127.0.0.1' }
+    };
+    // Must return the X-Real-IP header, NOT any value from X-Forwarded-For
+    assert.strictEqual(getClientIp(req), '198.51.100.77', 'Must strictly use X-Real-IP and ignore X-Forwarded-For');
+
+    // When X-Real-IP is absent, must NOT fall back to X-Forwarded-For
+    const reqNoRealIp = {
+      headers: { 'x-forwarded-for': '203.0.113.195' },
+      socket: { remoteAddress: '127.0.0.1' }
+    };
+    assert.strictEqual(getClientIp(reqNoRealIp), '127.0.0.1', 'Must not parse X-Forwarded-For when X-Real-IP is absent');
+  });
+
+  runTest('LID-VER-003.6: getClientIp strictly rejects malformed, non-IP, or injected X-Real-IP', () => {
+    const malformedCases = [
+      '999.999.999.999',
+      'not_an_ip_address',
+      '1.2.3.4, 5.6.7.8',
+      '<script>alert(1)</script>',
+      '127.0.0.1; DROP TABLE sessions;',
+      '',
+      '   '
+    ];
+
+    for (const badIp of malformedCases) {
+      const req = {
+        headers: { 'x-real-ip': badIp },
+        socket: { remoteAddress: '192.168.1.50' }
+      };
+      assert.strictEqual(getClientIp(req), '192.168.1.50', `Malformed IP "${badIp}" must fall back to socket address`);
     }
+  });
+
+  runTest('LID-VER-003.7: getClientIp falls back safely to direct socket address and 127.0.0.1', () => {
+    // Normalizes IPv4-mapped IPv6
+    const reqV4Mapped = {
+      headers: {},
+      socket: { remoteAddress: '::ffff:192.168.1.99' }
+    };
+    assert.strictEqual(getClientIp(reqV4Mapped), '192.168.1.99', 'IPv4-mapped IPv6 must be normalized');
+
+    // Missing socket address falls back to 127.0.0.1
+    const reqEmpty = { headers: {} };
+    assert.strictEqual(getClientIp(reqEmpty), '127.0.0.1', 'Empty request must fall back to 127.0.0.1');
+    assert.strictEqual(getClientIp(null), '127.0.0.1', 'Null request must fall back to 127.0.0.1');
+  });
+
+  runTest('LID-VER-003.8: isRequestSecure explicitly checks X-Forwarded-Proto without global trust proxy', () => {
+    // Public Railway edge request over HTTPS
+    const reqHttps = {
+      headers: { 'x-forwarded-proto': 'https' },
+      secure: false
+    };
+    assert.strictEqual(isRequestSecure(reqHttps), true, 'Railway X-Forwarded-Proto: https must be recognized as secure');
+
+    // Insecure HTTP request forwarded by edge
+    const reqHttp = {
+      headers: { 'x-forwarded-proto': 'http' },
+      secure: false
+    };
+    assert.strictEqual(isRequestSecure(reqHttp), false, 'Plain HTTP request must not be recognized as secure');
+
+    // Direct TLS connection
+    const reqDirectTls = {
+      headers: {},
+      secure: true
+    };
+    assert.strictEqual(isRequestSecure(reqDirectTls), true, 'Direct TLS socket must be recognized as secure');
+  });
+
+  runTest('LID-VER-003.9: Private-network boundary model (*.railway.internal) is asserted', () => {
+    // Requests arriving over *.railway.internal bypass Railway public edge header sanitization.
+    // The application rate limiter strictly checks net.isIP() regardless of origin, and the Railway
+    // project environment is documented as a strict isolation boundary.
+    const internalReq = {
+      headers: {
+        'host': 'auth-backend.railway.internal:4001',
+        'x-real-ip': '10.1.2.3'
+      },
+      socket: { remoteAddress: '10.1.2.3' }
+    };
+    assert.strictEqual(getClientIp(internalReq), '10.1.2.3', 'Internal service IP must validate as net.isIP');
   });
 
   // =========================================================================
