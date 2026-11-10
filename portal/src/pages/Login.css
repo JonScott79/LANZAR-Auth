@@ -1,0 +1,215 @@
+.login-panel {
+  background: white;
+  border: 4px solid var(--deep-navy);
+  border-radius: var(--radius-md);
+  padding: 3rem;
+  max-width: 500px;
+  margin: 2rem auto;
+  box-shadow: 8px 8px 0px var(--rocket-orange);
+}
+
+.login-title {
+  font-family: var(--font-heading);
+  color: var(--deep-navy);
+  font-size: 2.5rem;
+  margin-top: 0;
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  border-bottom: 4px solid var(--retro-teal);
+  padding-bottom: 0.5rem;
+}
+
+.login-desc {
+  font-family: var(--font-body);
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  margin-bottom: 2.5rem;
+  line-height: 1.6;
+}
+
+.login-form .form-group {
+  margin-bottom: 2rem;
+}
+
+.label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.login-form label {
+  display: block;
+  font-family: var(--font-heading);
+  color: var(--rocket-orange);
+  font-weight: 800;
+  margin-bottom: 0.75rem;
+  font-size: 1rem;
+  text-transform: uppercase;
+}
+
+.login-form input {
+  width: 100%;
+  padding: 1rem;
+  border: 2px solid var(--deep-navy);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 1.1rem;
+  background: var(--bg-primary);
+  box-sizing: border-box;
+}
+
+.login-form input:focus {
+  outline: none;
+  border-color: var(--rocket-orange);
+  background: white;
+}
+
+.text-link {
+  background: none;
+  border: none;
+  color: var(--retro-teal);
+  font-family: var(--font-code);
+  font-weight: bold;
+  cursor: pointer;
+  padding: 0;
+}
+
+.text-link:hover {
+  text-decoration: underline;
+  color: var(--deep-navy);
+}
+
+.primary-btn {
+  width: 100%;
+  background: var(--rocket-orange);
+  color: white;
+  border: 3px solid var(--deep-navy);
+  border-radius: var(--radius-pill);
+  padding: 1rem 2rem;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 1.2rem;
+  cursor: pointer;
+  text-transform: uppercase;
+  box-shadow: 4px 4px 0px var(--deep-navy);
+  transition: all 0.1s;
+}
+
+.primary-btn:hover:not(:disabled) {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0px var(--deep-navy);
+}
+
+.primary-btn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0px var(--deep-navy);
+}
+
+.primary-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.form-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  align-items: center;
+  margin-top: 2rem;
+}
+
+.error-msg {
+  color: #c2185b;
+  background: #fce4ec;
+  padding: 1rem;
+  border: 2px solid #c2185b;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-code);
+  font-size: 0.95rem;
+  margin-top: 1.5rem;
+  font-weight: bold;
+}
+
+.success-msg {
+  color: #2e7d32;
+  background: #e8f5e9;
+  padding: 1rem;
+  border: 2px solid #2e7d32;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-code);
+  font-size: 0.95rem;
+  margin-top: 1.5rem;
+  font-weight: bold;
+}
+
+/* ==========================================================
+   Google Sign-In Button
+   ========================================================== */
+
+.google-signin-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 60px;
+  margin-top: 1.5rem;
+  padding: 12px 24px;
+  border: 3px solid var(--retro-teal);
+  border-radius: var(--radius-pill);
+  background: var(--bg-secondary);
+  color: var(--deep-navy);
+  font-family: var(--font-heading);
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  box-shadow: 0 4px 0 rgba(42, 114, 143, 0.12);
+  transition: all var(--speed-fast);
+}
+
+.google-signin-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  background: var(--retro-teal);
+  color: var(--text-light);
+  border-color: var(--retro-teal);
+  box-shadow: 0 6px 0 rgba(42, 114, 143, 0.18), var(--shadow-small);
+}
+
+.google-signin-button:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 0 rgba(42, 114, 143, 0.12);
+}
+
+.google-signin-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.google-icon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+}
+
+.signin-divider {
+  display: flex;
+  align-items: center;
+  margin: 2.5rem 0 1rem 0;
+}
+
+.signin-divider-line {
+  flex: 1;
+  height: 2px;
+  background: var(--soft-gray);
+  opacity: 0.3;
+}
+
+.signin-divider-text {
+  padding: 0 15px;
+  font-family: var(--font-code);
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--soft-gray);
+}

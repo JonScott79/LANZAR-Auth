@@ -1,0 +1,839 @@
+/* ==========================================================================
+   LANZAR MISSION CONTROL — AEROSPACE OPERATIONS CSS
+   Authoritative Styling for portal.lanzar.me/admin/*
+   ========================================================================== */
+
+:root {
+  /* Aerospace Core Palette */
+  --mc-bg-deep: #080b11;            /* Deep Space Void */
+  --mc-bg-surface: #0f1523;         /* Brushed Titanium Panel */
+  --mc-bg-elevated: #161e31;        /* Command Deck Card */
+  --mc-bg-highlight: #1d273f;       /* Interactive Hover State */
+  --mc-border: #1e293b;             /* Hairline Telemetry Border */
+  --mc-border-active: #334155;       /* Focus / Active Border */
+  
+  /* Telemetry Signals */
+  --mc-gold: #ffd700;               /* LANZAR Aerospace Gold */
+  --mc-gold-dim: rgba(255, 215, 0, 0.15);
+  --mc-cyan: #06b6d4;               /* Phosphor Telemetry Cyan */
+  --mc-cyan-dim: rgba(6, 182, 212, 0.15);
+  --mc-emerald: #10b981;            /* Nominal / Verified Emerald */
+  --mc-emerald-dim: rgba(16, 185, 129, 0.15);
+  --mc-amber: #f59e0b;              /* Warning / Challenge Amber */
+  --mc-amber-dim: rgba(245, 158, 11, 0.15);
+  --mc-rose: #f43f5e;               /* Alert / Revoked Rose */
+  --mc-rose-dim: rgba(244, 63, 94, 0.15);
+
+  /* Typography & Layout */
+  --mc-text-main: #f8fafc;
+  --mc-text-muted: #94a3b8;
+  --mc-text-dim: #64748b;
+  --mc-font-mono: 'JetBrains Mono', 'Share Tech Mono', monospace;
+  --mc-font-sans: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  --mc-font-display: 'Bebas Neue', sans-serif;
+
+  --mc-rail-width: 260px;
+  --mc-rail-collapsed-width: 68px;
+  --mc-topbar-height: 58px;
+}
+
+/* Master Shell Container */
+.mc-container {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--mc-bg-deep);
+  color: var(--mc-text-main);
+  font-family: var(--mc-font-sans);
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Top Telemetry Bar */
+.mc-topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--mc-topbar-height);
+  background-color: rgba(11, 15, 25, 0.95);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--mc-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 1.25rem;
+  z-index: 1000;
+}
+
+.mc-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.mc-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.mc-brand-orb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--mc-gold);
+  box-shadow: 0 0 10px var(--mc-gold);
+  animation: mc-pulse 2.5s infinite;
+}
+
+@keyframes mc-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+.mc-brand-text {
+  font-family: var(--mc-font-display);
+  font-size: 1.45rem;
+  letter-spacing: 0.05em;
+  color: #fff;
+  line-height: 1;
+}
+
+.mc-brand-badge {
+  font-family: var(--mc-font-mono);
+  font-size: 0.65rem;
+  background: var(--mc-gold-dim);
+  color: var(--mc-gold);
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  letter-spacing: 0.08em;
+}
+
+.mc-telemetry-pill {
+  font-family: var(--mc-font-mono);
+  font-size: 0.72rem;
+  color: var(--mc-cyan);
+  background: var(--mc-cyan-dim);
+  border: 1px solid rgba(6, 182, 212, 0.25);
+  padding: 3px 8px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.mc-topbar-center {
+  display: flex;
+  align-items: center;
+}
+
+.mc-search-trigger {
+  background: var(--mc-bg-surface);
+  border: 1px solid var(--mc-border);
+  color: var(--mc-text-muted);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 0.82rem;
+  font-family: var(--mc-font-mono);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 260px;
+}
+
+.mc-search-trigger:hover {
+  border-color: var(--mc-gold);
+  color: #fff;
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.15);
+}
+
+.mc-kbd-shortcut {
+  font-size: 0.68rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--mc-border);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--mc-gold);
+}
+
+.mc-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.mc-clock {
+  font-family: var(--mc-font-mono);
+  font-size: 0.75rem;
+  color: var(--mc-text-muted);
+  letter-spacing: 0.05em;
+}
+
+.mc-operator-card {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--mc-bg-surface);
+  border: 1px solid var(--mc-border);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.mc-operator-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--mc-gold-dim);
+  border: 1px solid var(--mc-gold);
+  color: var(--mc-gold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.mc-operator-email {
+  font-family: var(--mc-font-mono);
+  font-size: 0.75rem;
+  color: var(--mc-text-main);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mc-btn-signout {
+  background: transparent;
+  border: 1px solid var(--mc-border);
+  color: var(--mc-text-muted);
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-family: var(--mc-font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mc-btn-signout:hover {
+  border-color: var(--mc-rose);
+  color: var(--mc-rose);
+}
+
+/* Orbital Command Rail (Sidebar) */
+.mc-rail {
+  position: fixed;
+  top: var(--mc-topbar-height);
+  bottom: 0;
+  left: 0;
+  width: var(--mc-rail-width);
+  background-color: var(--mc-bg-surface);
+  border-right: 1px solid var(--mc-border);
+  display: flex;
+  flex-direction: column;
+  z-index: 900;
+  overflow-y: auto;
+  transition: width 0.25s ease;
+}
+
+.mc-rail-section {
+  padding: 1rem 0.75rem 0.4rem 0.75rem;
+}
+
+.mc-rail-heading {
+  font-family: var(--mc-font-mono);
+  font-size: 0.65rem;
+  color: var(--mc-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 0 0.5rem 0.5rem 0.5rem;
+  margin: 0;
+}
+
+.mc-rail-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  color: var(--mc-text-muted);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+
+.mc-rail-link:hover {
+  background-color: var(--mc-bg-elevated);
+  color: #fff;
+  border-color: var(--mc-border);
+}
+
+.mc-rail-link.active {
+  background-color: rgba(255, 215, 0, 0.08);
+  border-color: rgba(255, 215, 0, 0.4);
+  color: var(--mc-gold);
+  font-weight: 700;
+}
+
+.mc-rail-icon {
+  font-size: 1rem;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* Main Viewport Workspace */
+.mc-workspace {
+  margin-left: var(--mc-rail-width);
+  margin-top: var(--mc-topbar-height);
+  flex: 1;
+  padding: 1.75rem 2rem 4rem 2rem;
+  min-height: calc(100vh - var(--mc-topbar-height));
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  max-width: 1600px;
+}
+
+/* Header Deck Banner */
+.mc-deck-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  border-bottom: 1px solid var(--mc-border);
+  padding-bottom: 1rem;
+}
+
+.mc-deck-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.mc-deck-tag {
+  font-family: var(--mc-font-mono);
+  font-size: 0.68rem;
+  color: var(--mc-cyan);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.mc-deck-title {
+  font-family: var(--mc-font-display);
+  font-size: 2.2rem;
+  letter-spacing: 0.04em;
+  margin: 0;
+  color: #fff;
+  line-height: 1;
+}
+
+.mc-deck-subtitle {
+  font-size: 0.88rem;
+  color: var(--mc-text-muted);
+  margin: 0;
+}
+
+.mc-deck-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Telemetry Metric Cards Grid */
+.mc-grid-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.mc-metric-card {
+  background-color: var(--mc-bg-surface);
+  border: 1px solid var(--mc-border);
+  border-radius: 8px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.mc-metric-card:hover {
+  border-color: var(--mc-border-active);
+  transform: translateY(-2px);
+}
+
+.mc-metric-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--mc-border);
+}
+
+.mc-metric-card.gold::before { background: var(--mc-gold); }
+.mc-metric-card.emerald::before { background: var(--mc-emerald); }
+.mc-metric-card.cyan::before { background: var(--mc-cyan); }
+.mc-metric-card.amber::before { background: var(--mc-amber); }
+.mc-metric-card.rose::before { background: var(--mc-rose); }
+
+.mc-metric-label {
+  font-family: var(--mc-font-mono);
+  font-size: 0.7rem;
+  color: var(--mc-text-dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mc-metric-value {
+  font-size: 2rem;
+  font-weight: 800;
+  font-family: var(--mc-font-sans);
+  color: #fff;
+  line-height: 1.1;
+}
+
+.mc-metric-sub {
+  font-size: 0.75rem;
+  color: var(--mc-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Primary Deck Card / Panel */
+.mc-panel {
+  background-color: var(--mc-bg-surface);
+  border: 1px solid var(--mc-border);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.mc-panel-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--mc-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--mc-bg-elevated);
+}
+
+.mc-panel-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mc-panel-body {
+  padding: 1.25rem;
+}
+
+/* Aerospace Data Table */
+.mc-table-container {
+  overflow-x: auto;
+  border-radius: 6px;
+  border: 1px solid var(--mc-border);
+  background-color: var(--mc-bg-surface);
+}
+
+.mc-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.85rem;
+}
+
+.mc-table th {
+  background-color: var(--mc-bg-elevated);
+  padding: 0.75rem 1rem;
+  font-family: var(--mc-font-mono);
+  font-size: 0.7rem;
+  color: var(--mc-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--mc-border);
+}
+
+.mc-table td {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.6);
+  color: var(--mc-text-main);
+  vertical-align: middle;
+}
+
+.mc-table tr:last-child td {
+  border-bottom: none;
+}
+
+.mc-table tr:hover td {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* Badges & Telemetry Pills */
+.mc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--mc-font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.mc-badge.nominal {
+  background-color: var(--mc-emerald-dim);
+  color: var(--mc-emerald);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.mc-badge.warning {
+  background-color: var(--mc-amber-dim);
+  color: var(--mc-amber);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.mc-badge.alert {
+  background-color: var(--mc-rose-dim);
+  color: var(--mc-rose);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+.mc-badge.gold {
+  background-color: var(--mc-gold-dim);
+  color: var(--mc-gold);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+}
+
+.mc-badge.cyan {
+  background-color: var(--mc-cyan-dim);
+  color: var(--mc-cyan);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+}
+
+/* Action Buttons */
+.mc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-family: var(--mc-font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+  text-decoration: none;
+}
+
+.mc-btn-primary {
+  background-color: var(--mc-gold);
+  color: #000;
+  border-color: var(--mc-gold);
+}
+
+.mc-btn-primary:hover {
+  background-color: #ffe033;
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.3);
+}
+
+.mc-btn-secondary {
+  background-color: var(--mc-bg-elevated);
+  color: var(--mc-text-main);
+  border-color: var(--mc-border);
+}
+
+.mc-btn-secondary:hover {
+  background-color: var(--mc-bg-highlight);
+  border-color: var(--mc-border-active);
+  color: #fff;
+}
+
+.mc-btn-danger {
+  background-color: var(--mc-rose-dim);
+  color: var(--mc-rose);
+  border-color: rgba(244, 63, 94, 0.4);
+}
+
+.mc-btn-danger:hover {
+  background-color: var(--mc-rose);
+  color: #fff;
+}
+
+/* Form Inputs & Filters */
+.mc-input {
+  background-color: var(--mc-bg-surface);
+  border: 1px solid var(--mc-border);
+  color: #fff;
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-family: var(--mc-font-sans);
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.mc-input:focus {
+  border-color: var(--mc-gold);
+  box-shadow: 0 0 0 1px var(--mc-gold);
+}
+
+.mc-select {
+  background-color: var(--mc-bg-surface);
+  border: 1px solid var(--mc-border);
+  color: #fff;
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-family: var(--mc-font-mono);
+  font-size: 0.78rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.mc-select:focus {
+  border-color: var(--mc-gold);
+}
+
+/* Slide-Over Drawer */
+.mc-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  z-index: 2000;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.mc-drawer {
+  width: 100%;
+  max-width: 580px;
+  height: 100%;
+  background: var(--mc-bg-surface);
+  border-left: 1px solid var(--mc-border);
+  box-shadow: -15px 0 35px rgba(0, 0, 0, 0.8);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.mc-drawer-header {
+  padding: 1.25rem 1.5rem;
+  background-color: var(--mc-bg-elevated);
+  border-bottom: 1px solid var(--mc-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.mc-drawer-body {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  flex: 1;
+}
+
+.mc-drawer-footer {
+  padding: 1.25rem 1.5rem;
+  background-color: var(--mc-bg-elevated);
+  border-top: 1px solid var(--mc-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  position: sticky;
+  bottom: 0;
+}
+
+/* Command Palette Modal (Cmd+K) */
+.mc-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(6px);
+  z-index: 3000;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 10vh;
+}
+
+.mc-palette {
+  width: 100%;
+  max-width: 640px;
+  background: var(--mc-bg-surface);
+  border: 1px solid var(--mc-border-active);
+  border-radius: 10px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.9), 0 0 20px rgba(255, 215, 0, 0.15);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.mc-palette-search {
+  display: flex;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--mc-border);
+  gap: 0.75rem;
+  background: var(--mc-bg-elevated);
+}
+
+.mc-palette-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-size: 1.1rem;
+  font-family: var(--mc-font-sans);
+}
+
+.mc-palette-results {
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.mc-palette-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  color: var(--mc-text-main);
+  border: 1px solid transparent;
+}
+
+.mc-palette-item:hover,
+.mc-palette-item.selected {
+  background-color: var(--mc-bg-highlight);
+  border-color: rgba(255, 215, 0, 0.3);
+  color: #fff;
+}
+
+.mc-palette-footer {
+  padding: 0.6rem 1.25rem;
+  background: var(--mc-bg-deep);
+  border-top: 1px solid var(--mc-border);
+  font-family: var(--mc-font-mono);
+  font-size: 0.68rem;
+  color: var(--mc-text-dim);
+  display: flex;
+  justify-content: space-between;
+}
+
+/* Destructive Confirmation Modal */
+.mc-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(5px);
+  z-index: 3500;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 1rem;
+}
+
+.mc-modal {
+  width: 100%;
+  max-width: 480px;
+  background: var(--mc-bg-surface);
+  border: 1px solid var(--mc-rose);
+  border-radius: 8px;
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.8), 0 0 25px rgba(244, 63, 94, 0.2);
+  overflow: hidden;
+}
+
+.mc-modal-header {
+  padding: 1.25rem;
+  background: rgba(244, 63, 94, 0.1);
+  border-bottom: 1px solid rgba(244, 63, 94, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.mc-modal-title {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--mc-rose);
+  font-weight: 800;
+}
+
+.mc-modal-body {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  font-size: 0.9rem;
+  color: var(--mc-text-main);
+}
+
+.mc-modal-footer {
+  padding: 1rem 1.5rem;
+  background: var(--mc-bg-elevated);
+  border-top: 1px solid var(--mc-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+/* Responsiveness */
+@media (max-width: 1024px) {
+  :root {
+    --mc-rail-width: 220px;
+  }
+}
+
+@media (max-width: 768px) {
+  .mc-rail {
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+  }
+  .mc-rail.open {
+    transform: translateX(0);
+  }
+  .mc-workspace {
+    margin-left: 0;
+    padding: 1rem;
+  }
+  .mc-topbar-center {
+    display: none;
+  }
+}

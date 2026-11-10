@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--==========================================================
+    Build.me
+    Retro Futuristic Background
+===========================================================-->
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080">
+
+    <!-- Stars -->
+
+    <circle cx="180" cy="140" r="4" fill="#E2B84D"/>
+    <circle cx="450" cy="90" r="3" fill="#E2B84D"/>
+    <circle cx="720" cy="170" r="5" fill="#E2B84D"/>
+    <circle cx="980" cy="110" r="4" fill="#E2B84D"/>
+    <circle cx="1350" cy="150" r="3" fill="#E2B84D"/>
+    <circle cx="1650" cy="80" r="5" fill="#E2B84D"/>
+
+    <!-- Planet -->
+
+    <circle
+        cx="1600"
+        cy="220"
+        r="85"
+        fill="none"
+        stroke="#2A728F"
+        stroke-width="6"/>
+
+    <ellipse
+        cx="1600"
+        cy="220"
+        rx="140"
+        ry="35"
+        fill="none"
+        stroke="#2A728F"
+        stroke-width="5"
+        transform="rotate(-18 1600 220)"/>
+
+    <!-- Moon -->
+
+    <path
+        d="M260 250
+           A70 70 0 1 1 260 110
+           A45 45 0 1 0 260 250"
+        fill="#E2B84D"/>
+
+    <!-- Mountains -->
+
+    <path
+        d="
+        M0 780
+        L220 540
+        L380 700
+        L600 470
+        L820 720
+        L1060 520
+        L1320 760
+        L1520 560
+        L1710 720
+        L1920 600
+        L1920 1080
+        L0 1080
+        Z"
+        fill="#DCCFBE"/>
+
+    <!-- City -->
+
+    <rect x="250" y="690" width="60" height="180" rx="8" fill="#2A728F"/>
+
+    <rect x="380" y="630" width="70" height="240" rx="10" fill="#2A728F"/>
+
+    <rect x="560" y="660" width="50" height="210" rx="8" fill="#2A728F"/>
+
+    <rect x="760" y="590" width="85" height="280" rx="12" fill="#2A728F"/>
+
+    <rect x="980" y="670" width="55" height="200" rx="8" fill="#2A728F"/>
+
+    <rect x="1160" y="610" width="80" height="260" rx="10" fill="#2A728F"/>
+
+    <rect x="1400" y="660" width="60" height="210" rx="8" fill="#2A728F"/>
+
+    <!-- Googie Spires -->
+
+    <polygon
+        points="415,630 395,600 435,600"
+        fill="#F46B45"/>
+
+    <polygon
+        points="802,590 777,545 827,545"
+        fill="#F46B45"/>
+
+    <polygon
+        points="1200,610 1175,570 1225,570"
+        fill="#F46B45"/>
+
+    <!-- Jet Trail -->
+
+    <path
+        d="M150 320
+           C420 180 760 260 1120 180
+           C1360 130 1610 140 1840 230"
+        fill="none"
+        stroke="#2A728F"
+        stroke-width="4"
+        stroke-linecap="round"/>
+
+    <!-- Atomic Orbit -->
+
+    <ellipse
+        cx="950"
+        cy="330"
+        rx="340"
+        ry="95"
+        fill="none"
+        stroke="#2A728F"
+        stroke-width="2"
+        transform="rotate(-15 950 330)"/>
+
+</svg>
