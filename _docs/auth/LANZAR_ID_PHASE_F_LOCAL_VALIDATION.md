@@ -1,5 +1,5 @@
-# LANZAR ID — Phase F: Local End-to-End Validation Report
-**Specification Reference:** LID-PHASE-F-LOCAL-E2E  
+# LANZAR ID — Phase F & F.1: Local End-to-End Browser Validation Report
+**Specification Reference:** LID-PHASE-F-LOCAL-E2E / Phase F.1 Final Browser Acceptance  
 **Audit Date:** 2026-11-09  
 **Branch:** `lanzar_id_main_chat`  
 **Execution Environment:** Windows 10/11 x64, Node.js v22.14.0, Java 17.0.12 LTS  
@@ -10,7 +10,7 @@
 
 ## 1. Executive Summary
 
-Phase F represents the complete local end-to-end integration and verification of the LANZAR ID authentication ecosystem. The entire platform was exercised as a functioning application in an isolated local development environment without touching production Firebase, provisioning cloud infrastructure, deploying to remote hosts, or incurring paid third-party SMS carrier charges.
+Phase F and Phase F.1 represent the complete local end-to-end integration and verification of the LANZAR ID authentication ecosystem. The entire platform was exercised as a functioning application in an isolated local development environment without touching production Firebase, provisioning cloud infrastructure, deploying to remote hosts, or incurring paid third-party SMS carrier charges.
 
 All five application and infrastructure endpoints were started locally and validated against each other:
 1. **Firebase Auth Emulator** on `127.0.0.1:9099` (Project: `demo-lanzar-dev`)
@@ -19,9 +19,15 @@ All five application and infrastructure endpoints were started locally and valid
 4. **LANZAR Auth Hub Frontend (Vite/React)** on `http://localhost:4000`
 5. **LANZAR Portal Client Application (Mock Test Harness)** on `http://localhost:5173`
 
-A real Google Chrome browser was driven programmatically via the Chrome DevTools Protocol (WebSocket CDP) to complete the full user lifecycle, client authentication handshakes, multi-factor authentication (MFA) challenges, session management, and boundary security rejections.
+A real Google Chrome browser was driven programmatically via the Chrome DevTools Protocol (WebSocket CDP) to complete:
+- The full embedded iframe authentication modal journey.
+- The full popup window authentication journey.
+- Browser-level active session listing, individual device revocation, and account-wide session revocation.
+- Self-service account registration, profile updates, and RFC 6238 TOTP multi-factor authentication enrollment.
+- OAuth 2.0 PKCE authorization, signed `mfaProof` challenge exchange, single-use token consumption, and security boundary rejections.
+- Complete post-test account and credential purge from local emulators.
 
-Across all 12 regression and validation batteries, LANZAR ID achieved **349 automated formal assertions + 15 validation checks = 364 total verification points with zero failures (100.0% pass rate)**. Zero requests reached production Firebase or external APIs.
+Across all 12 regression and validation batteries, LANZAR ID achieved **357 automated formal assertions + 15 validation checks = 372 total verification points with zero failures (100.0% pass rate)**. Zero requests reached production Firebase or external APIs.
 
 ---
 
@@ -37,7 +43,7 @@ The local services communicated exclusively over loopback interfaces (`127.0.0.1
 | **LANZAR Auth Hub Frontend** | `4000` | `http://localhost:4000` | Vite + React 19 Single Page Application (`auth.lanzar.me`) |
 | **LANZAR Portal Test Client** | `5173` | `http://localhost:5173` | Node.js HTTP client embedding `<lanzar-auth-modal>` and testing OAuth |
 
-### Startup Command Summary
+### Startup Commands
 - **Firebase Emulators:**
   ```powershell
   npx firebase-tools@13.31.0 emulators:start --only auth,firestore --project demo-lanzar-dev
@@ -65,13 +71,13 @@ The local services communicated exclusively over loopback interfaces (`127.0.0.1
 
 ## 3. Real Browser Test Journey Results (CDP Automation)
 
-A dedicated, comprehensive browser test suite (`auth/test-browser-e2e.cjs`) exercised the complete user and client journey in headless Chrome. All 22 test checkpoints passed cleanly.
+A dedicated, comprehensive browser test suite (`auth/test-browser-e2e.cjs`) exercised the complete user and client journey in headless Chrome. All 30 test checkpoints passed cleanly.
 
 ```
 ======================================================
-LANZAR ID — Phase F: Local End-to-End Browser Suite
+LANZAR ID — Phase F.1: Final Browser Acceptance Suite
 Engine: Real Google Chrome Headless via CDP
-Timestamp: 2026-11-09T23:33:45.299Z
+Timestamp: 2026-11-10T00:01:17.239Z
 ======================================================
 
 [SECTION 1] Invalid Credentials & Boundary Error Handling
@@ -83,50 +89,58 @@ Timestamp: 2026-11-09T23:33:45.299Z
 [SECTION 3] Account Profile Updates & Anti-Tampering
   ✓ [PASS] TEST-03: User profile updated (displayName, bio) successfully in Firestore via PUT
 
-[SECTION 4] Active Session Listing & Fine-Grained Revocation
-  ✓ [PASS] TEST-04: Active sessions list loaded on Security dashboard
+[SECTION 4] Client Integration — Embedded Modal (iframe) Complete Flow
+  ✓ [PASS] TEST-04: Portal client opens <lanzar-auth-modal> and iframe context resolves
+  ✓ [PASS] TEST-05: Modal iframe delivers authorization code via postMessage, completes PKCE exchange, and closes
 
-[SECTION 5] Universal RFC 6238 TOTP MFA Enrollment
-  ✓ [PASS] TEST-05: RFC 6238 Base32 Secret generated for user enrollment (HGDCZPLIGHOQA5YEVBJ47X73YXB2M33G)
-  ✓ [PASS] TEST-06: TOTP confirmed and 8 single-use recovery codes generated (8 codes)
-  ✓ [PASS] TEST-07: MFA status displayed as ACTIVE AND ENROLLED on dashboard
+[SECTION 5] Client Integration — Popup Authentication Complete Flow
+  ✓ [PASS] TEST-06: openPopup initiates browser popup window with S256 PKCE challenge
+  ✓ [PASS] TEST-07: Popup completes login, dispatches targeted postMessage to opener, and executes window.close()
+  ✓ [PASS] TEST-08: Parent portal client receives authorization code from popup and completes PKCE exchange
 
-[SECTION 6] Sign Out & Session Teardown
-  ✓ [PASS] TEST-08: User signed out and redirected to clean authentication screen
+[SECTION 6] Browser-Level Session Revocation
+  ✓ [PASS] TEST-09: Security dashboard lists active device sessions in UI (2 sessions present)
+  ✓ [PASS] TEST-10: Browser UI revokes individual active session with green alert confirmation
+  ✓ [PASS] TEST-11: Individual revoked session is marked revoked in Firestore while other sessions remain active
+  ✓ [PASS] TEST-12: Global session revocation executes "SIGN OUT EVERYWHERE" and returns to clean auth screen
+  ✓ [PASS] TEST-13: All user sessions invalidated following global revocation (0 active remaining) (Active: 0)
 
-[SECTION 7] Single-Use Recovery Code Verification & Replay Protection
-  ✓ [PASS] TEST-09: Single-use recovery code validates and consumes cleanly
-  ✓ [PASS] TEST-10: Replay of consumed recovery code is strictly rejected
+[SECTION 7] Universal RFC 6238 TOTP MFA Enrollment
+  ✓ [PASS] TEST-14: RFC 6238 Base32 Secret generated for user enrollment ([REDACTED_MFA_SECRET])
+  ✓ [PASS] TEST-15: TOTP confirmed and 8 single-use recovery codes generated (8 codes [REDACTED])
+  ✓ [PASS] TEST-16: MFA status displayed as ACTIVE AND ENROLLED on dashboard
+  ✓ [PASS] TEST-17: User signed out and redirected to clean authentication screen
 
-[SECTION 8] Client Integration — Embedded Modal (iframe)
-  ✓ [PASS] TEST-11: Portal client opens <lanzar-auth-modal> with S256 PKCE challenge
+[SECTION 8] Single-Use Recovery Code Verification & Replay Protection
+  ✓ [PASS] TEST-18: Single-use recovery code validates and consumes cleanly
+  ✓ [PASS] TEST-19: Replay of consumed recovery code is strictly rejected
 
-[SECTION 9] Client Integration — Popup Authentication
-  ✓ [PASS] TEST-12: Client openPopup initiates PKCE authentication with S256 challenge
+[SECTION 9] Client Integration — Top-Level Redirect PKCE Flow
+  ✓ [PASS] TEST-20: Top-level redirect navigates to Auth Hub with explicit S256 challenge
 
-[SECTION 10] Client Integration — Top-Level Redirect PKCE Flow
-  ✓ [PASS] TEST-13: Top-level redirect navigates to Auth Hub with explicit S256 challenge
+[SECTION 10] Full MFA Challenge Enforcement & Session Establishment
+  ✓ [PASS] TEST-21: Backend /authorize halts with 403 mfa_required for MFA-enrolled user
+  [MFA STEP SYNC] Waiting 18s for next TOTP time-step to prevent anti-replay rejection...
+  ✓ [PASS] TEST-22: Valid TOTP code verifies and issues signed mfaProof token
+  ✓ [PASS] TEST-23: /authorize succeeds with valid mfa_proof and issues authorization code
+  ✓ [PASS] TEST-24: Client exchangeCodeForSession mints custom token with session_id
+  ✓ [PASS] TEST-25: Consumed authorization code cannot be replayed (atomic single-use)
 
-[SECTION 11] Full PKCE Code Exchange & Session Establishment
-  ✓ [PASS] TEST-14: Backend /authorize halts with 403 mfa_required for enrolled user
-  [MFA STEP SYNC] Waiting 30s for next TOTP time-step to prevent anti-replay rejection...
-  ✓ [PASS] TEST-15: Valid TOTP code verifies and issues signed mfaProof token
-  ✓ [PASS] TEST-16: /authorize succeeds with valid mfa_proof and issues authorization code
-  ✓ [PASS] TEST-17: Client exchangeCodeForSession mints custom token with session_id
-  ✓ [PASS] TEST-18: Consumed authorization code cannot be replayed (atomic single-use)
+[SECTION 11] Security Boundary Rejections
+  ✓ [PASS] TEST-26: Unauthorized redirect URI rejected with HTTP 400
+  ✓ [PASS] TEST-27: Unregistered client ID rejected with HTTP 400
 
-[SECTION 12] Security Boundary Rejections
-  ✓ [PASS] TEST-19: Unauthorized redirect URI rejected with HTTP 400
-  ✓ [PASS] TEST-20: Unregistered client ID rejected with HTTP 400
+[SECTION 12] Network Boundary & Zero-Production Verification
+  ✓ [PASS] TEST-28: ZERO requests sent to production Firebase or external APIs (0 violations)
+  ✓ [PASS] TEST-29: 100% of browser network activity is restricted to local loopback endpoints (203 total requests)
 
-[SECTION 13] Network Boundary & Zero-Production Verification
-  ✓ [PASS] TEST-21: ZERO requests sent to production Firebase or external APIs (0 violations)
-  ✓ [PASS] TEST-22: 100% of browser network activity is restricted to local loopback endpoints (157 total requests)
+[SECTION 13] Test Account Cleanup & Security Hygiene
+  ✓ [PASS] TEST-30: Temporary test account and MFA enrollment purged cleanly from emulators
 
 ======================================================
 BROWSER TEST RUN SUMMARY
-Total Executed: 22
-Passed:         22
+Total Executed: 30
+Passed:         30
 Failed:         0
 Success Rate:   100.0%
 ======================================================
@@ -134,53 +148,67 @@ Success Rate:   100.0%
 
 ---
 
-## 4. Evidence & Captured Screenshots Catalog
+## 4. Completed Browser Acceptance Journeys
 
-All screenshots captured during the browser execution were persisted to disk and verified:
+### 1. Embedded Modal (`<lanzar-auth-modal>`) Iframe Flow
+- **Interaction:** The test portal on `http://localhost:5173/` opened `<lanzar-auth-modal>`.
+- **Execution Context:** Chrome CDP discovered the spawned execution context for `http://localhost:4000/`.
+- **Authentication:** Credentials were typed into the Auth Hub form inside the iframe and submitted.
+- **Handshake Verification:** The Auth Hub detected `window.parent !== window` and dispatched `lanzar:authenticated` via `window.parent.postMessage({ type: 'lanzar:authenticated', payload: { code, state } }, 'http://localhost:5173')`.
+- **Validation:** The web component validated exact registered origin (`http://localhost:4000`) and source window (`frame.contentWindow`).
+- **Exchange:** The web component dispatched the event with the client-retained `code_verifier`, closed the modal (`open` attribute removed), and the portal client successfully exchanged the code for an active session (`custom_token` and `session_id`).
+- **Screenshot Evidence:** `07_portal_modal_authenticated.png`.
 
-| File Name | File Size | Description | Artifact URI |
-| :--- | :--- | :--- | :--- |
-| `01_invalid_credentials.png` | 98.9 KB | Auth Hub login view with red error alert banner displaying "Invalid email or password." | `screenshots/01_invalid_credentials.png` |
-| `02_account_registered_portal.png` | 50.2 KB | Central Portal dashboard rendered immediately upon registration for `Commander Sarah Connor`. | `screenshots/02_account_registered_portal.png` |
-| `03_profile_updated.png` | 40.1 KB | Profile editor showing updated display name `Commander Sarah Connor (Lead)` and mission bio. | `screenshots/03_profile_updated.png` |
-| `04_sessions_managed.png` | 44.9 KB | Security dashboard displaying active session list and individual device revocation controls. | `screenshots/04_sessions_managed.png` |
-| `05_totp_enrolled.png` | 46.2 KB | Successful TOTP enrollment modal displaying 8 single-use backup recovery codes. | `screenshots/05_totp_enrolled.png` |
-| `06_signed_out.png` | 100.3 KB | Returned to clean, unauthenticated login screen after clicking "Sign Out". | `screenshots/06_signed_out.png` |
-| `07_portal_modal_opened.png` | 64.3 KB | Mission Control portal (`localhost:5173`) rendering `<lanzar-auth-modal>` shadow DOM iframe. | `screenshots/07_portal_modal_opened.png` |
-| `08_popup_flow_initiated.png` | 26.5 KB | Mission Control portal initiating popup flow with client-retained `code_verifier`. | `screenshots/08_popup_flow_initiated.png` |
-| `09_redirect_at_auth_hub.png` | 100.3 KB | Full browser top-level navigation arriving at Auth Hub with valid OAuth/PKCE query parameters. | `screenshots/09_redirect_at_auth_hub.png` |
+### 2. Popup Window (`openPopup()`) Flow
+- **Interaction:** The portal client executed `LanzarAuth.openPopup({ clientId: 'portal', redirectUri: 'http://localhost:5173/' })`.
+- **Target Discovery:** Chrome opened a dedicated browser popup window (`http://localhost:4000/?client_id=portal...`).
+- **Authentication:** Credentials were submitted inside the popup window.
+- **Handshake Verification:** The Auth Hub detected `window.opener` and dispatched `window.opener.postMessage(...)` targeting `http://localhost:5173`.
+- **Window Termination:** The popup automatically executed `window.close()` and closed.
+- **Client Resolution:** The parent portal received the message, confirmed source window matching, and completed PKCE token exchange.
+- **Screenshot Evidence:** `08_portal_popup_authenticated.png`.
 
----
-
-## 5. Defects Identified & Remediated During Phase F
-
-During execution of Phase F, four integration and security vulnerabilities were discovered and resolved:
-
-### 1. CORS Method Omission in `originValidator.js`
-- **Issue:** `originValidator.js` previously only configured `Access-Control-Allow-Methods: GET, POST, OPTIONS`.
-- **Impact:** Real browsers executing preflight `OPTIONS` requests before `PUT /api/id/profile` (profile updates) and `DELETE /api/id/sessions/:id` (device revocation) received CORS preflight errors (`Failed to fetch`).
-- **Remediation:** Added `PUT` and `DELETE` to line 25 of `auth/auth-backend/middleware/originValidator.js`.
-
-### 2. Google Analytics Tag in Development / Test Runs
-- **Issue:** `auth/index.html` contained an unconditional `<script async src="https://www.googletagmanager.com/gtag/js?id=G-CY8BM4YE8C">` tag.
-- **Impact:** When Chrome loaded `http://localhost:4000/`, it issued 9 network requests to `www.google-analytics.com` and `www.googletagmanager.com`, violating local isolation.
-- **Remediation:** Replaced the static `<script>` tag in `auth/index.html` with an explicit hostname guard that only injects Google Tag Manager when `window.location.hostname === 'auth.lanzar.me'`. In local development and automated testing, zero external tracking calls occur.
-
-### 3. TOTP Secret Exfiltration Risk to Third-Party QR API
-- **Issue:** `auth/src/components/MyLanzarAccount.jsx` rendered the TOTP setup QR code by loading an `<img>` with `src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(totpSetup.otpauthUrl)}"`.
-- **Impact:** This transmitted the user's unconfirmed RFC 6238 Base32 secret over the internet to a third-party server (`api.qrserver.com`) during local testing and live usage.
-- **Remediation:** Added an offline safeguard in `MyLanzarAccount.jsx` that detects local development hosts (`localhost`, `127.0.0.1`) and renders an offline placeholder instructing the user to use the manual setup key, avoiding external transmission of sensitive TOTP seeds.
-
-### 4. Port Standard & Jar Resolution in `test-level3-firestore-rules.cjs`
-- **Issue:** The security rules test hardcoded `cloud-firestore-emulator-v1.19.6.jar` and attempted to spawn a new process on port 8080 even when the emulator was already actively running in the background.
-- **Impact:** Caused false-negative startup crashes due to missing `.jar` filename versions and port collision on 8080.
-- **Remediation:** Dynamically resolved the emulator JAR file from `.cache/firebase/emulators` and implemented an active health probe that seamlessly reuses the already running emulator instance on port 8080.
+### 3. Browser-Level Session Revocation & Kill Switch
+- **Listing:** The user navigated to the Security Deck in the Auth Hub UI. The active sessions list rendered Session 1 (iframe login) and Session 2 (popup login).
+- **Individual Revocation:** Clicking the "REVOKE" button on Session 1 executed `DELETE /api/id/sessions/:id`. The UI displayed a green alert banner (`Device session successfully revoked.`).
+- **Verification of Scoping:** An API verification confirmed that Session 1 was marked `revoked: true`, returning HTTP 401 `session_revoked`, while Session 2 remained active and able to authenticate requests.
+- **Global Revocation ("SIGN OUT EVERYWHERE"):** Clicking `.btn-kill-all` accepted the confirmation dialog and executed `POST /api/id/sessions/revoke-all`.
+- **Verification of Global Invalidation:** The server incremented `tokenVersion`, invalidating all active sessions across all devices (Session 2 now also returned HTTP 401 `session_revoked`), and the user was signed out to the unauthenticated screen.
+- **Screenshot Evidence:** `10_session_revoked_browser.png` and `11_all_sessions_revoked.png`.
 
 ---
 
-## 6. Complete Automated Regression Battery Accounting
+## 5. Evidence & Captured Screenshots Catalog
 
-All 12 test suites were executed sequentially. Across the entire platform, zero regressions occurred:
+All screenshots captured during browser execution were persisted to disk and verified:
+
+| File Name | File Size | Description |
+| :--- | :--- | :--- |
+| `01_invalid_credentials.png` | 98.9 KB | Auth Hub login view with red error alert banner displaying "Invalid email or password." |
+| `02_account_registered_portal.png` | 50.3 KB | Central Portal dashboard rendered immediately upon registration for `Commander Sarah Connor`. |
+| `03_profile_updated.png` | 40.1 KB | Profile editor showing updated display name `Commander Sarah Connor (Lead)` and mission bio. |
+| `04_sessions_managed.png` | 44.0 KB | Security dashboard displaying active session list and individual device revocation controls. |
+| `05_totp_enrolled.png` | 46.4 KB | Successful TOTP enrollment modal displaying 8 single-use backup recovery codes. |
+| `06_signed_out.png` | 100.3 KB | Returned to clean, unauthenticated login screen after clicking "Sign Out". |
+| `07_portal_modal_authenticated.png` | 34.7 KB | Mission Control portal displaying `STATUS: AUTHENTICATED` after modal iframe login and PKCE exchange. |
+| `08_portal_popup_authenticated.png` | 34.8 KB | Mission Control portal displaying `STATUS: AUTHENTICATED` after popup login and PKCE exchange. |
+| `09_redirect_at_auth_hub.png` | 100.3 KB | Full browser top-level navigation arriving at Auth Hub with valid OAuth/PKCE query parameters. |
+| `10_session_revoked_browser.png` | 45.6 KB | Security dashboard displaying green alert confirmation after revoking individual device session. |
+| `11_all_sessions_revoked.png` | 100.3 KB | Returned to clean login screen after executing "SIGN OUT EVERYWHERE" global revocation. |
+
+---
+
+## 6. Test Account Cleanup & Sensitive Data Hygiene
+
+- **Secret Masking:** In all test runner logs, terminal outputs, and committed documentation, sensitive credentials, RFC 6238 Base32 secrets, and recovery codes are strictly masked (`[REDACTED_MFA_SECRET]`, `[REDACTED]`).
+- **Emulator Account Purge:** At the conclusion of the test run, `TEST-30` executed an automated purge deleting the test cadet account from the Firebase Auth emulator (`/v1/accounts:delete`) and deleting associated user documents (`users/{uid}`, `customers/{uid}`, `mfa_factors/{uid}`) from the Firestore emulator.
+- **Zero Real Credentials:** No production service account keys, live passwords, or live SMS secrets exist in the working directory or git history.
+
+---
+
+## 7. Complete Automated Regression Battery Accounting
+
+All 12 test suites were executed sequentially with zero regressions:
 
 | # | Test Suite File | Focus Area | Assertions | Result |
 | :---: | :--- | :--- | :---: | :---: |
@@ -195,44 +223,23 @@ All 12 test suites were executed sequentially. Across the entire platform, zero 
 | 9 | `auth/test-client-registry.cjs` | OAuth Client Registry Reconciliation | 9 | **PASS** |
 | 10 | `auth/test-popup-modal-handshake.cjs` | Handshake Origin & Window Validation | 10 | **PASS** |
 | 11 | `auth/test-dev-isolation.cjs` | Development Environment Isolation & Guardrails | 8 | **PASS** |
-| 12 | `auth/test-browser-e2e.cjs` | Real Headless Chrome CDP Browser Automation | 22 | **PASS** |
-| — | **Total Formal Assertions** | **12 Comprehensive Test Batteries** | **349** | **100% PASS** |
+| 12 | `auth/test-browser-e2e.cjs` | Real Headless Chrome CDP Browser Automation | 30 | **PASS** |
+| — | **Total Formal Assertions** | **12 Comprehensive Test Batteries** | **357** | **100% PASS** |
 | — | **Validation Checks** | Auth/MFA Infrastructure Pre-flight Checks | **15** | **100% PASS** |
-| — | **Grand Total Verification Points** | **Formal Assertions + Validation Checks** | **364** | **100% PASS** |
+| — | **Grand Total Verification Points** | **Formal Assertions + Validation Checks** | **372** | **100% PASS** |
 
-In addition, `npm --prefix auth run build` built the Vite production client bundle in 468ms with zero errors or warnings.
-
----
-
-## 7. Security Boundaries & Invariant Audit Verification
-
-1. **Development Environment Isolation:**
-   - Development uses `demo-lanzar-dev` exclusively.
-   - Any attempt to configure production project IDs in development triggers immediate fatal process exit.
-   - Partial emulator configuration fails closed.
-
-2. **Strict S256 PKCE Enforcement:**
-   - Both backend `/authorize` and client SDK enforce explicit `code_challenge_method=S256`.
-   - Missing or non-S256 methods are rejected with HTTP 400.
-   - PKCE verifiers are never transmitted over `postMessage` or exposed to the Auth Hub.
-
-3. **Multi-Factor Authentication (MFA) Invariant:**
-   - Users with enrolled TOTP factors cannot bypass MFA on OAuth authorization. `/authorize` halts with HTTP 403 `mfa_required` and issues a signed `mfa_session`.
-   - Only upon supplying a valid TOTP code or single-use recovery code does `/mfa/verify` issue a signed `mfa_proof` token permitting `/authorize` to mint an authorization code.
-   - Anti-replay protection prevents re-use of TOTP time-steps.
-   - Recovery codes are single-use; replays are rejected.
-
-4. **Multi-Tenant Origin & Redirect Safety:**
-   - Client applications (`portal`, `tickets`, `threadline`, `ai`) are restricted to exact registered origins and redirect URIs.
-   - Unregistered client IDs and unapproved redirect URIs are rejected with HTTP 400.
-   - Cross-origin `postMessage` from untrusted origins or mismatched source windows are discarded.
-
-5. **Network Boundary Containment:**
-   - 100% of network traffic during the entire browser run was confined to `127.0.0.1` and `localhost`.
-   - Zero network requests reached production Firebase (`lanzar-95ae3`), Google Analytics, or external third-party services.
+In addition, `npm --prefix auth run build` built the Vite production client bundle in 543ms with zero errors or warnings.
 
 ---
 
-## 8. Conclusion & Sign-Off Recommendation
+## 8. Remaining Known Limitations
 
-Phase F has successfully proved that LANZAR ID is fully functional in a complete local development environment using real browser automation. The ecosystem contracts between the Auth Hub frontend, backend API, client SDK, and client application are hardened, aligned, and verified.
+1. **Third-Party Analytics Domain Gating:** Google Tag Manager is dynamically gated in `auth/index.html` to run exclusively on `window.location.hostname === 'auth.lanzar.me'`. When deploying to staging or custom preview domains, Google Tag Manager remains intentionally disabled to avoid polluting production analytics or violating data residency.
+2. **WebAuthn / Passkeys Scope:** The current implementation uses RFC 6238 TOTP and single-use recovery codes as the primary MFA mechanisms. FIDO2/WebAuthn passkeys are not yet implemented and remain candidate items for future roadmap consideration.
+3. **High-Concurrency Firestore Document Locks:** In high-concurrency environments, rapid simultaneous code exchanges for the same code record rely on Firestore document update transactions. The single-use invariant is strictly maintained by failing redundant requests with HTTP 400 `invalid_grant`.
+
+---
+
+## 9. Conclusion & Final Acceptance
+
+Phase F.1 has conclusively verified that the LANZAR ID authentication platform operates end-to-end in real Google Chrome across modal, popup, redirect, MFA, and session revocation workflows. All security boundaries, PKCE isolation guarantees, and environment constraints are fully satisfied.
