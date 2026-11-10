@@ -33,18 +33,23 @@ function App() {
     const state = urlParams.get('state');
 
     if (code && state) {
+      // Immediately sanitize URL history synchronously to prevent double-invocation under React.StrictMode
+      window.history.replaceState({}, document.title, window.location.pathname);
+
       setIsExchanging(true);
       const storedState = sessionStorage.getItem('pkce_state');
       const codeVerifier = sessionStorage.getItem('pkce_code_verifier');
 
+      // Consume one-time PKCE state and verifier immediately
+      sessionStorage.removeItem('pkce_state');
+      sessionStorage.removeItem('pkce_code_verifier');
+
       if (!storedState || state !== storedState) {
         setAuthError('Authentication state mismatch. Please try again.');
         setIsExchanging(false);
-        window.history.replaceState({}, document.title, window.location.pathname);
       } else if (!codeVerifier) {
         setAuthError('Missing PKCE verifier for authorization exchange.');
         setIsExchanging(false);
-        window.history.replaceState({}, document.title, window.location.pathname);
       } else {
         const cleanRedirectUri = window.location.origin;
         LanzarAuth.exchangeCodeForSession({
@@ -60,16 +65,12 @@ function App() {
           return signInWithCustomToken(data.custom_token);
         })
         .then(() => {
-          window.history.replaceState({}, document.title, window.location.pathname);
-          sessionStorage.removeItem('pkce_state');
-          sessionStorage.removeItem('pkce_code_verifier');
           setIsExchanging(false);
         })
         .catch((err) => {
           console.error('[AUTH] Exchange Error:', err);
           setAuthError(err.message || 'Failed to complete login via Auth Hub.');
           setIsExchanging(false);
-          window.history.replaceState({}, document.title, window.location.pathname);
         });
         return; // Don't process onAuthStateChanged immediately, let it trigger after custom token
       }

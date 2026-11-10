@@ -32,21 +32,26 @@ export async function getAdmin(uid) {
     return null
   }
 
-  const adminRef = doc(
-    db,
-    'admins',
-    uid
-  )
+  try {
+    const adminRef = doc(
+      db,
+      'admins',
+      uid
+    )
 
-  const adminSnapshot = await getDoc(adminRef)
+    const adminSnapshot = await getDoc(adminRef)
 
-  if (!adminSnapshot.exists()) {
+    if (!adminSnapshot.exists()) {
+      return null
+    }
+
+    return {
+      id: adminSnapshot.id,
+      ...adminSnapshot.data(),
+    }
+  } catch (err) {
+    // Non-admin users or unprivileged clients receive permission-denied from Firestore rules; treat as non-admin
     return null
-  }
-
-  return {
-    id: adminSnapshot.id,
-    ...adminSnapshot.data(),
   }
 }
 

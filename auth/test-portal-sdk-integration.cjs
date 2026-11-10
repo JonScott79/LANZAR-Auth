@@ -141,10 +141,11 @@ async function run() {
     if (!authUp || !firestoreUp) {
       console.log('[INIT 1] Starting Firebase Auth & Firestore emulators...');
       emulatorProcess = spawn('npx.cmd', ['firebase-tools@13.31.0', 'emulators:start', '--only', 'auth,firestore', '--project', 'demo-lanzar-dev'], {
+        cwd: path.resolve(__dirname, '..'),
         shell: true,
         stdio: 'pipe'
       });
-      for (let i = 0; i < 40; i++) {
+      for (let i = 0; i < 90; i++) {
         const a = await isPortListening(9099);
         const f = await isPortListening(8080);
         if (a && f) break;

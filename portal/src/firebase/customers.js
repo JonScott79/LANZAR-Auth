@@ -44,8 +44,9 @@ export async function getCustomer(uid) {
     if (userSnapshot.exists()) {
       const userData = userSnapshot.data()
 
-      // Inactive user handling
-      if (userData.active !== true) {
+      // Inactive user handling (supports both status: 'active' and legacy active: true)
+      const isActive = userData.active === true || userData.status === 'active'
+      if (!isActive) {
         return {
           id: userSnapshot.id,
           active: false,
@@ -80,7 +81,7 @@ export async function getCustomer(uid) {
         accountId: userData.accountId || null,
         role: userData.role || 'USER',
         services: services,
-        active: userData.active === true,
+        active: isActive,
       }
     }
   } catch (userLookupError) {
