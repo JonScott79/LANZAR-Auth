@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { 
   signInWithEmail, 
   sendPasswordReset, 
@@ -41,6 +41,13 @@ export default function Login({
 
   const authBackendUrl = getAuthApiUrl()
 
+  // Auto-start MFA enrollment when an admin lands on enrollment screen
+  useEffect(() => {
+    if (mfaChallenge?.required && mfaChallenge?.enrollmentRequired && mfaChallenge?.user && !mfaEnrollSecret && !loading && !localError) {
+      handleStartMfaEnrollment(mfaChallenge.user)
+    }
+  }, [mfaChallenge, mfaEnrollSecret, localError])
+
   // ==========================================
   // Sign In Handler
   // ==========================================
@@ -57,6 +64,7 @@ export default function Login({
       if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') message = 'Invalid email or password.'
       if (err.code === 'auth/too-many-requests') message = 'Account temporarily disabled due to too many failed attempts.'
       setLocalError(message)
+    } finally {
       setLoading(false)
     }
   }
@@ -127,6 +135,7 @@ export default function Login({
         message = 'Password is too weak. Please use at least 8 characters with numbers.'
       }
       setLocalError(message)
+    } finally {
       setLoading(false)
     }
   }
@@ -161,6 +170,7 @@ export default function Login({
         message = 'The sign-in popup was closed before completing authentication.'
       }
       setLocalError(message)
+    } finally {
       setLoading(false)
     }
   }
@@ -187,21 +197,31 @@ export default function Login({
   // MFA: Start Enrollment (Fetch Secret)
   // ==========================================
   const handleStartMfaEnrollment = async (user) => {
+    if (!user) return
     setLoading(true)
     setLocalError(null)
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 15000)
     try {
       const idToken = await user.getIdToken()
       const res = await fetch(`${authBackendUrl}/mfa/totp/setup`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken })
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({ idToken }),
+        signal: controller.signal
       })
+      clearTimeout(timer)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error_description || 'Failed to start MFA setup.')
       setMfaEnrollSecret(data.secret)
       setMfaOtpauthUrl(data.otpauthUrl)
     } catch (err) {
-      setLocalError(err.message)
+      clearTimeout(timer)
+      const isTimeout = err.name === 'AbortError'
+      setLocalError(isTimeout ? 'MFA setup request timed out. Please check your connection and retry.' : err.message)
     } finally {
       setLoading(false)
     }
@@ -212,25 +232,35 @@ export default function Login({
   // ==========================================
   const handleCompleteMfaEnrollment = async (e, user) => {
     e.preventDefault()
+    if (!user) return
     setLoading(true)
     setLocalError(null)
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 15000)
     try {
       const idToken = await user.getIdToken()
       const res = await fetch(`${authBackendUrl}/mfa/totp/enable`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
         body: JSON.stringify({
           idToken,
           secret: mfaEnrollSecret,
           code: mfaCode.trim()
-        })
+        }),
+        signal: controller.signal
       })
+      clearTimeout(timer)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error_description || 'MFA code verification failed.')
       setRecoveryCodes(data.recoveryCodes || [])
       setSuccessMsg('MFA successfully enabled! Please copy and securely store your recovery codes.')
     } catch (err) {
-      setLocalError(err.message)
+      clearTimeout(timer)
+      const isTimeout = err.name === 'AbortError'
+      setLocalError(isTimeout ? 'MFA confirmation request timed out. Please try again.' : err.message)
     } finally {
       setLoading(false)
     }
@@ -243,6 +273,8 @@ export default function Login({
     e.preventDefault()
     setLoading(true)
     setLocalError(null)
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 15000)
     try {
       const res = await fetch(`${authBackendUrl}/mfa/verify`, {
         method: 'POST',
@@ -251,15 +283,20 @@ export default function Login({
           mfaSession: mfaChallenge.mfaSession,
           code: mfaCode.trim(),
           method: mfaMethod
-        })
+        }),
+        signal: controller.signal
       })
+      clearTimeout(timer)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error_description || 'MFA verification failed.')
       if (onMfaVerified) {
         onMfaVerified(data.mfaProof)
       }
     } catch (err) {
-      setLocalError(err.message)
+      clearTimeout(timer)
+      const isTimeout = err.name === 'AbortError'
+      setLocalError(isTimeout ? 'Verification timed out. Please try again.' : err.message)
+    } finally {
       setLoading(false)
     }
   }
@@ -291,16 +328,22 @@ export default function Login({
           </p>
 
           {!mfaEnrollSecret ? (
-            <div>
-              {error && <p className="error-msg">{error}</p>}
-              <button 
-                type="button" 
-                className="primary-btn" 
-                onClick={() => handleStartMfaEnrollment(mfaChallenge.user)}
-                disabled={loading}
-              >
-                {loading ? 'INITIALIZING...' : 'GENERATE AUTHENTICATOR KEY'}
-              </button>
+            <div style={{ textAlign: 'center', padding: '1rem 0' }}>
+              {error && <p className="error-msg" style={{ marginBottom: '1rem' }}>{error}</p>}
+              {loading ? (
+                <div>
+                  <div className="lanzar-spinner" style={{ width: 32, height: 32, margin: '0 auto 1rem auto' }}></div>
+                  <p style={{ color: '#94a3b8', fontSize: '0.85rem', letterSpacing: '0.05em' }}>INITIALIZING AUTHENTICATOR KEY...</p>
+                </div>
+              ) : (
+                <button 
+                  type="button" 
+                  className="primary-btn" 
+                  onClick={() => handleStartMfaEnrollment(mfaChallenge.user)}
+                >
+                  {error ? 'RETRY GENERATING KEY' : 'GENERATE AUTHENTICATOR KEY'}
+                </button>
+              )}
             </div>
           ) : recoveryCodes.length === 0 ? (
             <form onSubmit={(e) => handleCompleteMfaEnrollment(e, mfaChallenge.user)} className="login-form">

@@ -53,17 +53,27 @@ function createMfaRouter({ db, authAdmin, isUserAdmin }) {
     }
   });
 
+  const extractIdToken = (req) => {
+    if (req.body && req.body.idToken) return req.body.idToken;
+    const authHeader = req.headers && req.headers['authorization'];
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      return authHeader.slice(7).trim();
+    }
+    return null;
+  };
+
   router.post('/totp/setup', async (req, res) => {
     try {
-      const { idToken } = req.body;
-      if (!idToken) return res.status(400).json({ error: 'missing_token' });
+      const idToken = extractIdToken(req);
+      if (!idToken) return res.status(400).json({ error: 'missing_token', error_description: 'idToken is required.' });
       const decoded = await authAdmin.verifyIdToken(idToken, true);
 
       const secret = generateBase32Secret(20);
       stagePendingEnrollment(decoded.uid, secret);
 
       const issuer = 'LANZAR ID';
-      const otpauthUrl = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(decoded.email)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
+      const userIdentifier = decoded.email || decoded.uid;
+      const otpauthUrl = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(userIdentifier)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
 
       return res.json({
         success: true,
@@ -77,8 +87,9 @@ function createMfaRouter({ db, authAdmin, isUserAdmin }) {
 
   router.post('/totp/enable', async (req, res) => {
     try {
-      const { idToken, code } = req.body;
-      if (!idToken || !code) return res.status(400).json({ error: 'missing_parameters' });
+      const idToken = extractIdToken(req);
+      const code = req.body && req.body.code;
+      if (!idToken || !code) return res.status(400).json({ error: 'missing_parameters', error_description: 'idToken and code are required.' });
       const decoded = await authAdmin.verifyIdToken(idToken, true);
 
       const secret = getPendingEnrollment(decoded.uid);
@@ -96,7 +107,7 @@ function createMfaRouter({ db, authAdmin, isUserAdmin }) {
 
       await db.collection('mfa_factors').doc(decoded.uid).set({
         uid: decoded.uid,
-        email: decoded.email,
+        email: decoded.email || null,
         enabled: true,
         totpSecret: encryptedSecretData,
         recoveryCodes: hashedRecords,
@@ -108,7 +119,7 @@ function createMfaRouter({ db, authAdmin, isUserAdmin }) {
 
       await recordSecurityEvent(db, {
         actorUid: decoded.uid,
-        actorEmail: decoded.email,
+        actorEmail: decoded.email || null,
         action: 'mfa.totp.enrolled',
         targetUid: decoded.uid,
         ipAddress: req.ip,

@@ -405,3 +405,16 @@
   padding-top: 0.5rem;
   border-top: 1px solid rgba(255, 215, 0, 0.15);
 }
+
+.lanzar-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(244, 107, 69, 0.2);
+  border-top-color: var(--rocket-orange, #f46b45);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
