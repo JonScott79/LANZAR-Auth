@@ -9,13 +9,18 @@
     <meta property="og:title" content="LANZAR Customer Portal" />
     <meta property="og:type" content="website" />
     <meta name="theme-color" content="#102A43" />
-    <!-- Google Analytics -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-CY8BM4YE8C"></script>
+    <!-- Google Analytics (Production Only) -->
     <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag() { dataLayer.push(arguments); }
-      gtag('js', new Date());
-      gtag('config', 'G-CY8BM4YE8C');
+      if (window.location.hostname === 'portal.lanzar.me') {
+        const s = document.createElement('script');
+        s.async = true;
+        s.src = 'https://www.googletagmanager.com/gtag/js?id=G-CY8BM4YE8C';
+        document.head.appendChild(s);
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
+        gtag('config', 'G-CY8BM4YE8C');
+      }
     </script>
   </head>
   <body>
