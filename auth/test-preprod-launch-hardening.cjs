@@ -16,6 +16,8 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 const assert = require('assert');
 const crypto = require('crypto');
 const http = require('http');
+const fs = require('fs');
+const { spawn, execSync } = require('child_process');
 const express = require('express');
 
 const { MockFirestore, MockAuthAdmin } = require('./test-utils/mockFirebase.cjs');
@@ -32,7 +34,8 @@ const {
 } = require('./auth-backend/middleware/rateLimiter.js');
 const {
   AuthorizationCodeStore,
-  FirestoreAuthorizationCodeStore
+  FirestoreAuthorizationCodeStore,
+  hashAuthorizationCode
 } = require('./auth-backend/store.js');
 const { SessionService } = require('./auth-backend/sessionService.js');
 const { ENV_CONFIGS, resolveEnvironment } = require('./auth-backend/config/environments.js');
@@ -314,7 +317,7 @@ async function main() {
   // =========================================================================
   console.log('\n--- 4. LID-SEC-001: Distributed Firestore Authorization Code Store ---');
 
-  await runAsyncTest('LID-SEC-001.1: Store writes code to Firestore with 10-minute expiry and S256 requirement', async () => {
+  await runAsyncTest('LID-SEC-001.1: Store writes code to Firestore with 10-minute expiry, S256, and cryptographic doc ID hashing', async () => {
     const db = new MockFirestore();
     const store = new FirestoreAuthorizationCodeStore(db);
 
@@ -329,8 +332,20 @@ async function main() {
 
     assert.ok(code && typeof code === 'string' && code.length === 64, 'Code must be 64-char hex string');
 
+    // Cryptographic document ID hashing verification:
+    const codeHash = hashAuthorizationCode(code);
+    assert.notStrictEqual(codeHash, code, 'Doc ID must be cryptographic hash, not raw code');
+
+    // Keyed by codeHash in database
+    const directDoc = await db.collection('oauth_codes').doc(codeHash).get();
+    assert.strictEqual(directDoc.exists, true, 'Document must be keyed by codeHash in Firestore');
+
+    // Raw code document must NOT exist in database
+    const rawDoc = await db.collection('oauth_codes').doc(code).get();
+    assert.strictEqual(rawDoc.exists, false, 'Raw code document must NOT exist in Firestore');
+
     const record = await store.getCode(code);
-    assert.ok(record, 'Record must exist in Firestore');
+    assert.ok(record, 'Record must be retrievable via raw code');
     assert.strictEqual(record.uid, 'user_oauth_123');
     assert.strictEqual(record.codeChallengeMethod, 'S256');
     assert.strictEqual(record.used, false);
@@ -377,6 +392,119 @@ async function main() {
       1,
       'Exactly one redemption must succeed under concurrent race conditions'
     );
+  });
+
+  await runAsyncTest('LID-SEC-001.3: Firestore Emulator transaction execution, cryptographic hashing & replay verification', async () => {
+    const { initializeApp, getApps, deleteApp } = require('firebase-admin/app');
+    const { getFirestore } = require('firebase-admin/firestore');
+
+    const cacheDir = path.resolve(process.env.USERPROFILE, '.cache/firebase/emulators');
+    let emulatorJar = null;
+    if (fs.existsSync(cacheDir)) {
+      const files = fs.readdirSync(cacheDir);
+      const jar = files.find(f => f.startsWith('cloud-firestore-emulator-') && f.endsWith('.jar'));
+      if (jar) emulatorJar = path.join(cacheDir, jar);
+    }
+
+    let isListening = false;
+    try {
+      isListening = await new Promise((resolve) => {
+        const req = http.get('http://127.0.0.1:8080', (res) => resolve(true));
+        req.on('error', () => resolve(false));
+        req.setTimeout(500, () => { req.destroy(); resolve(false); });
+      });
+    } catch (_) {
+      isListening = false;
+    }
+
+    let spawnedProc = null;
+    if (!isListening && emulatorJar && fs.existsSync(emulatorJar)) {
+      console.log('    [EMULATOR] Spawning local Firestore emulator on 127.0.0.1:8080 for transaction verification...');
+      spawnedProc = spawn('java', ['-jar', emulatorJar, '--host', '127.0.0.1', '--port', '8080'], { stdio: 'ignore' });
+      for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 200));
+        try {
+          const ok = await new Promise((resolve) => {
+            const req = http.get('http://127.0.0.1:8080', (res) => resolve(true));
+            req.on('error', () => resolve(false));
+            req.setTimeout(300, () => { req.destroy(); resolve(false); });
+          });
+          if (ok) {
+            isListening = true;
+            break;
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (!isListening) {
+      console.log('    (Skipping live emulator check: Firestore emulator not listening on 8080)');
+      return;
+    }
+
+    process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
+    const appName = `emu_test_${Date.now()}`;
+    const testApp = initializeApp({ projectId: 'demo-lanzar-dev' }, appName);
+    const emuDb = getFirestore(testApp);
+
+    try {
+      const emuStore = new FirestoreAuthorizationCodeStore(emuDb);
+      const challenge = crypto.createHash('sha256').update('real_verifier_456').digest('base64url');
+      const rawCode = await emuStore.createCode({
+        uid: 'emu_user_789',
+        clientId: 'id_portal',
+        redirectUri: 'https://id.lanzar.me/callback',
+        codeChallenge: challenge,
+        codeChallengeMethod: 'S256'
+      });
+
+      const expectedDocId = hashAuthorizationCode(rawCode);
+      assert.notStrictEqual(expectedDocId, rawCode, 'Document ID must be SHA-256 hash, not raw code');
+
+      // Direct read from Firestore Emulator: verify document ID is codeHash
+      const docSnap = await emuDb.collection('oauth_codes').doc(expectedDocId).get();
+      assert.strictEqual(docSnap.exists, true, 'Document must be keyed by codeHash in Firestore Emulator');
+      assert.strictEqual(docSnap.id, expectedDocId, 'Document ID in emulator must match cryptographic SHA-256');
+
+      // Verify raw code doc does NOT exist
+      const unhashedDocSnap = await emuDb.collection('oauth_codes').doc(rawCode).get();
+      assert.strictEqual(unhashedDocSnap.exists, false, 'Raw code document must NOT exist in Firestore Emulator');
+
+      // 1st redemption in real Firestore transaction
+      const firstRedeem = await emuStore.markUsed(rawCode);
+      assert.strictEqual(firstRedeem, true, 'First markUsed transaction must succeed in Firestore Emulator');
+
+      // 2nd redemption in real Firestore transaction fails (replay rejected)
+      const secondRedeem = await emuStore.markUsed(rawCode);
+      assert.strictEqual(secondRedeem, false, 'Second markUsed transaction must fail in Firestore Emulator (replay rejected)');
+
+      // Concurrent race condition test in real Firestore Emulator
+      const raceCode = await emuStore.createCode({
+        uid: 'emu_race_user',
+        clientId: 'id_portal',
+        redirectUri: 'https://id.lanzar.me/callback',
+        codeChallenge: 'xyz_challenge',
+        codeChallengeMethod: 'S256'
+      });
+
+      const [r1, r2] = await Promise.all([
+        emuStore.markUsed(raceCode),
+        emuStore.markUsed(raceCode)
+      ]);
+
+      assert.strictEqual((r1 ? 1 : 0) + (r2 ? 1 : 0), 1, 'Exactly one concurrent transaction must succeed in real Firestore Emulator');
+    } finally {
+      await deleteApp(testApp);
+      if (spawnedProc) {
+        try {
+          if (process.platform === 'win32') {
+            execSync(`taskkill /F /PID ${spawnedProc.pid} /T`, { stdio: 'ignore' });
+          } else {
+            spawnedProc.kill('SIGKILL');
+          }
+        } catch (_) {}
+      }
+    }
   });
 
   // =========================================================================

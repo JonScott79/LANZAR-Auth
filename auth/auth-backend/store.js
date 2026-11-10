@@ -79,9 +79,18 @@ class AuthorizationCodeStore {
 }
 
 /**
+ * Cryptographic SHA-256 hash helper for authorization codes.
+ * Ensures authorization code document IDs in Firestore never store raw credentials.
+ */
+function hashAuthorizationCode(code) {
+    return crypto.createHash('sha256').update(String(code)).digest('hex');
+}
+
+/**
  * Distributed Firestore-backed OAuth 2.0 Authorization Code Store (LID-SEC-001)
  * Guarantees cross-instance durability, single-use atomic consumption,
  * client binding, PKCE S256 validation, and replay defense across multi-instance deployments.
+ * Stores authorization-code documents keyed by cryptographic hash (SHA-256) of the raw code.
  */
 class FirestoreAuthorizationCodeStore {
     constructor(db) {
@@ -98,7 +107,7 @@ class FirestoreAuthorizationCodeStore {
      * @param {string} data.redirectUri
      * @param {string} data.codeChallenge
      * @param {string} data.codeChallengeMethod
-     * @returns {Promise<string>} The generated authorization code
+     * @returns {Promise<string>} The generated raw authorization code (returned to client)
      */
     async createCode(data) {
         if (!data || !data.codeChallengeMethod) {
@@ -109,9 +118,11 @@ class FirestoreAuthorizationCodeStore {
         }
 
         const code = crypto.randomBytes(32).toString('hex');
+        const codeHash = hashAuthorizationCode(code);
         const expiresAt = Date.now() + 600000; // 10 minutes (600 seconds)
 
         const record = {
+            codeHash,
             uid: data.uid,
             clientId: data.clientId,
             redirectUri: data.redirectUri,
@@ -122,19 +133,21 @@ class FirestoreAuthorizationCodeStore {
             createdAt: Date.now()
         };
 
-        await this.db.collection('oauth_codes').doc(code).set(record);
+        // Key document by cryptographic hash, never by the raw authorization code
+        await this.db.collection('oauth_codes').doc(codeHash).set(record);
         return code;
     }
 
     /**
-     * Retrieves the authorization code record.
-     * @param {string} code
+     * Retrieves the authorization code record by hashing the incoming code.
+     * @param {string} code - Raw authorization code
      * @returns {Promise<Object|null>}
      */
     async getCode(code) {
         if (!code || typeof code !== 'string') return null;
+        const codeHash = hashAuthorizationCode(code);
         try {
-            const snap = await this.db.collection('oauth_codes').doc(code).get();
+            const snap = await this.db.collection('oauth_codes').doc(codeHash).get();
             if (!snap.exists) return null;
             return snap.data();
         } catch (_) {
@@ -145,12 +158,14 @@ class FirestoreAuthorizationCodeStore {
     /**
      * Atomically marks an authorization code as used via Firestore transaction.
      * Guarantees atomic CAS semantics across distributed multi-instance nodes.
-     * @param {string} code
+     * Resolves document using cryptographic hash of the incoming code.
+     * @param {string} code - Raw authorization code
      * @returns {Promise<boolean>} True if transitioned from used: false to used: true; false if already used or missing
      */
     async markUsed(code) {
         if (!code || typeof code !== 'string') return false;
-        const docRef = this.db.collection('oauth_codes').doc(code);
+        const codeHash = hashAuthorizationCode(code);
+        const docRef = this.db.collection('oauth_codes').doc(codeHash);
         try {
             return await this.db.runTransaction(async (transaction) => {
                 const snap = await transaction.get(docRef);
@@ -171,4 +186,4 @@ class FirestoreAuthorizationCodeStore {
     }
 }
 
-module.exports = { AuthorizationCodeStore, FirestoreAuthorizationCodeStore };
+module.exports = { AuthorizationCodeStore, FirestoreAuthorizationCodeStore, hashAuthorizationCode };

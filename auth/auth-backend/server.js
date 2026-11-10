@@ -72,8 +72,9 @@ const {
 });
 
 const PORT = process.env.PORT || 4001;
-const server = app.listen(PORT, () => {
-    console.log(`[LANZAR ID AUTH-BACKEND] Operations Center API listening on port ${PORT}`);
+const HOST = process.env.HOST || '0.0.0.0';
+const server = app.listen(PORT, HOST, () => {
+    console.log(`[LANZAR ID AUTH-BACKEND] Operations Center API listening on port ${PORT} (${HOST})`);
 });
 
 module.exports = { app, server, sessionService, founderService, profileService, smsService };

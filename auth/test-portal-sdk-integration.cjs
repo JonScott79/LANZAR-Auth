@@ -145,6 +145,8 @@ async function run() {
         shell: true,
         stdio: 'pipe'
       });
+      if (emulatorProcess.stdout) emulatorProcess.stdout.resume();
+      if (emulatorProcess.stderr) emulatorProcess.stderr.resume();
       for (let i = 0; i < 90; i++) {
         const a = await isPortListening(9099);
         const f = await isPortListening(8080);
@@ -175,6 +177,8 @@ async function run() {
       },
       stdio: 'pipe'
     });
+    if (backendProcess.stdout) backendProcess.stdout.resume();
+    if (backendProcess.stderr) backendProcess.stderr.resume();
 
     let backendReady = false;
     for (let i = 0; i < 25; i++) {
@@ -199,6 +203,8 @@ async function run() {
       shell: true,
       stdio: 'pipe'
     });
+    if (portalProcess.stdout) portalProcess.stdout.resume();
+    if (portalProcess.stderr) portalProcess.stderr.resume();
 
     let portalReady = false;
     for (let i = 0; i < 30; i++) {
