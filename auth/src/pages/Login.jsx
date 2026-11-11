@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { 
   signInWithEmail, 
   sendPasswordReset, 
@@ -6,6 +6,7 @@ import {
   registerWithEmail 
 } from '../firebase/auth.js'
 import { getAuthApiUrl } from '../config/env.js'
+import TotpQrCode from '../components/TotpQrCode.jsx'
 import './Login.css'
 
 export default function Login({ 
@@ -31,6 +32,10 @@ export default function Login({
   const [mfaMethod, setMfaMethod] = useState('totp') // 'totp' | 'recovery'
   const [mfaEnrollSecret, setMfaEnrollSecret] = useState(null)
   const [mfaOtpauthUrl, setMfaOtpauthUrl] = useState(null)
+  const [mfaInitLoading, setMfaInitLoading] = useState(false)
+  const [mfaInitError, setMfaInitError] = useState(null)
+  const [showManualKey, setShowManualKey] = useState(false)
+  const [copiedKey, setCopiedKey] = useState(false)
   const [recoveryCodes, setRecoveryCodes] = useState([])
   
   const [loading, setLoading] = useState(false)
@@ -41,12 +46,61 @@ export default function Login({
 
   const authBackendUrl = getAuthApiUrl()
 
+  // ==========================================
+  // MFA: Start Enrollment (Fetch Secret & URI)
+  // ==========================================
+  const handleStartMfaEnrollment = useCallback(async (user) => {
+    if (!user) return
+    setMfaInitLoading(true)
+    setMfaInitError(null)
+    setLocalError(null)
+    setMfaCode('')
+    setShowManualKey(false)
+    setCopiedKey(false)
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 15000)
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch(`${authBackendUrl}/mfa/totp/setup`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({ idToken }),
+        signal: controller.signal
+      })
+      clearTimeout(timer)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error_description || 'Failed to start MFA setup.')
+      if (!data.secret || !data.otpauthUrl || !data.otpauthUrl.startsWith('otpauth://totp/')) {
+        throw new Error('Server returned an incomplete MFA provisioning payload. Please retry.')
+      }
+      setMfaEnrollSecret(data.secret)
+      setMfaOtpauthUrl(data.otpauthUrl)
+    } catch (err) {
+      clearTimeout(timer)
+      const isTimeout = err.name === 'AbortError'
+      setMfaInitError(isTimeout ? 'MFA setup request timed out. Please check your connection and retry.' : err.message)
+    } finally {
+      setMfaInitLoading(false)
+    }
+  }, [authBackendUrl])
+
   // Auto-start MFA enrollment when an admin lands on enrollment screen
   useEffect(() => {
-    if (mfaChallenge?.required && mfaChallenge?.enrollmentRequired && mfaChallenge?.user && !mfaEnrollSecret && !loading && !localError) {
+    if (
+      mfaChallenge?.required &&
+      mfaChallenge?.enrollmentRequired &&
+      mfaChallenge?.user &&
+      !mfaEnrollSecret &&
+      !mfaInitLoading &&
+      !mfaInitError &&
+      recoveryCodes.length === 0
+    ) {
       handleStartMfaEnrollment(mfaChallenge.user)
     }
-  }, [mfaChallenge, mfaEnrollSecret, localError])
+  }, [mfaChallenge, mfaEnrollSecret, mfaInitLoading, mfaInitError, recoveryCodes.length, handleStartMfaEnrollment])
 
   // ==========================================
   // Sign In Handler
@@ -194,36 +248,16 @@ export default function Login({
   }
 
   // ==========================================
-  // MFA: Start Enrollment (Fetch Secret)
+  // MFA: Copy Setup Key Helper
   // ==========================================
-  const handleStartMfaEnrollment = async (user) => {
-    if (!user) return
-    setLoading(true)
-    setLocalError(null)
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 15000)
+  const handleCopyManualKey = async () => {
+    if (!mfaEnrollSecret || !navigator?.clipboard?.writeText) return
     try {
-      const idToken = await user.getIdToken()
-      const res = await fetch(`${authBackendUrl}/mfa/totp/setup`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({ idToken }),
-        signal: controller.signal
-      })
-      clearTimeout(timer)
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error_description || 'Failed to start MFA setup.')
-      setMfaEnrollSecret(data.secret)
-      setMfaOtpauthUrl(data.otpauthUrl)
-    } catch (err) {
-      clearTimeout(timer)
-      const isTimeout = err.name === 'AbortError'
-      setLocalError(isTimeout ? 'MFA setup request timed out. Please check your connection and retry.' : err.message)
-    } finally {
-      setLoading(false)
+      await navigator.clipboard.writeText(mfaEnrollSecret)
+      setCopiedKey(true)
+      setTimeout(() => setCopiedKey(false), 2000)
+    } catch {
+      setCopiedKey(false)
     }
   }
 
@@ -233,6 +267,11 @@ export default function Login({
   const handleCompleteMfaEnrollment = async (e, user) => {
     e.preventDefault()
     if (!user) return
+    const sanitizedCode = mfaCode.trim()
+    if (!/^\d{6}$/.test(sanitizedCode)) {
+      setLocalError('Please enter a valid 6-digit verification code.')
+      return
+    }
     setLoading(true)
     setLocalError(null)
     const controller = new AbortController()
@@ -247,8 +286,7 @@ export default function Login({
         },
         body: JSON.stringify({
           idToken,
-          secret: mfaEnrollSecret,
-          code: mfaCode.trim()
+          code: sanitizedCode
         }),
         signal: controller.signal
       })
@@ -320,20 +358,22 @@ export default function Login({
   // ==========================================
   if (mfaChallenge && mfaChallenge.required) {
     if (mfaChallenge.enrollmentRequired) {
+      const activeInitError = mfaInitError || (!mfaEnrollSecret && error)
+
       return (
         <div className="login-panel mfa-panel">
           <h2 className="login-title">SECURITY SETUP: MFA</h2>
           <p className="login-desc">
-            Administrator accounts require Multi-Factor Authentication. Please pair your authenticator app (Google Authenticator, Authy, or 1Password).
+            Administrator accounts require Multi-Factor Authentication. Pair Google Authenticator, Authy, 1Password, or any TOTP app.
           </p>
 
-          {!mfaEnrollSecret ? (
+          {!mfaEnrollSecret || !mfaOtpauthUrl ? (
             <div style={{ textAlign: 'center', padding: '1rem 0' }}>
-              {error && <p className="error-msg" style={{ marginBottom: '1rem' }}>{error}</p>}
-              {loading ? (
+              {activeInitError && <p className="error-msg" style={{ marginBottom: '1rem' }}>{activeInitError}</p>}
+              {mfaInitLoading ? (
                 <div>
                   <div className="lanzar-spinner" style={{ width: 32, height: 32, margin: '0 auto 1rem auto' }}></div>
-                  <p style={{ color: '#94a3b8', fontSize: '0.85rem', letterSpacing: '0.05em' }}>INITIALIZING AUTHENTICATOR KEY...</p>
+                  <p style={{ color: '#475569', fontSize: '0.85rem', letterSpacing: '0.05em', fontWeight: 700 }}>INITIALIZING AUTHENTICATOR KEY...</p>
                 </div>
               ) : (
                 <button 
@@ -341,38 +381,84 @@ export default function Login({
                   className="primary-btn" 
                   onClick={() => handleStartMfaEnrollment(mfaChallenge.user)}
                 >
-                  {error ? 'RETRY GENERATING KEY' : 'GENERATE AUTHENTICATOR KEY'}
+                  {activeInitError ? 'RETRY SETUP' : 'GENERATE AUTHENTICATOR QR'}
                 </button>
               )}
             </div>
           ) : recoveryCodes.length === 0 ? (
             <form onSubmit={(e) => handleCompleteMfaEnrollment(e, mfaChallenge.user)} className="login-form">
-              <div className="secret-display-box">
-                <span className="secret-label">AUTHENTICATOR SECRET KEY:</span>
-                <code className="secret-code">{mfaEnrollSecret}</code>
-                <p className="secret-hint">Add this key to your authenticator app.</p>
+              <div className="qr-enrollment-box">
+                <p className="qr-instruction">Scan this QR code with your authenticator app.</p>
+                <TotpQrCode otpauthUrl={mfaOtpauthUrl} size={184} />
+                <div className="manual-key-toggle-wrap">
+                  <button
+                    type="button"
+                    className="text-link manual-key-toggle"
+                    aria-expanded={showManualKey}
+                    aria-controls="manual-setup-key-panel"
+                    onClick={() => setShowManualKey((prev) => !prev)}
+                  >
+                    {showManualKey ? 'Hide manual setup key' : "Can't scan? Enter setup key manually"}
+                  </button>
+                </div>
+
+                {showManualKey && (
+                  <div id="manual-setup-key-panel" className="secret-display-box manual-fallback-box">
+                    <div className="manual-key-header">
+                      <span className="secret-label">MANUAL SETUP KEY</span>
+                      <button
+                        type="button"
+                        className="copy-key-btn"
+                        onClick={handleCopyManualKey}
+                      >
+                        {copiedKey ? 'COPIED' : 'COPY KEY'}
+                      </button>
+                    </div>
+                    <code className="secret-code">{mfaEnrollSecret}</code>
+                    <p className="secret-hint">Type: Time-based (TOTP) · Algorithm: SHA1 · Digits: 6 · Period: 30s</p>
+                  </div>
+                )}
               </div>
 
               <div className="form-group">
                 <label htmlFor="mfa-verify-code">6-DIGIT VERIFICATION CODE</label>
                 <input 
                   id="mfa-verify-code"
-                  type="text" 
+                  className="mfa-otp-input"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9]{6}"
                   maxLength={6}
                   value={mfaCode}
-                  onChange={(e) => setMfaCode(e.target.value)}
-                  placeholder="e.g. 123456"
+                  onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="123456"
                   required
-                  disabled={loading}
+                  disabled={loading || mfaInitLoading}
                   autoFocus
                 />
               </div>
 
               {error && <p className="error-msg">{error}</p>}
 
-              <button type="submit" className="primary-btn" disabled={loading}>
+              <button
+                type="submit"
+                className="primary-btn"
+                disabled={loading || mfaInitLoading || mfaCode.trim().length !== 6}
+              >
                 {loading ? 'VERIFYING...' : 'CONFIRM & ACTIVATE MFA'}
               </button>
+
+              <div className="mfa-secondary-actions">
+                <button
+                  type="button"
+                  className="text-link"
+                  disabled={loading || mfaInitLoading}
+                  onClick={() => handleStartMfaEnrollment(mfaChallenge.user)}
+                >
+                  {mfaInitLoading ? 'Generating new QR code...' : 'Generate new QR code'}
+                </button>
+              </div>
             </form>
           ) : (
             <div className="recovery-codes-box">

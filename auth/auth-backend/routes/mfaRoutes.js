@@ -5,6 +5,7 @@ const express = require('express');
 const { FieldValue } = require('firebase-admin/firestore');
 const {
   generateBase32Secret,
+  buildTotpProvisioningUri,
   verifyTOTP,
   encryptTotpSecret,
   decryptTotpSecret,
@@ -68,17 +69,38 @@ function createMfaRouter({ db, authAdmin, isUserAdmin }) {
       if (!idToken) return res.status(400).json({ error: 'missing_token', error_description: 'idToken is required.' });
       const decoded = await authAdmin.verifyIdToken(idToken, true);
 
+      let userIdentifier = decoded.email;
+      if (!userIdentifier && typeof authAdmin.getUser === 'function') {
+        const userRecord = await authAdmin.getUser(decoded.uid).catch(() => null);
+        userIdentifier = userRecord?.email || null;
+      }
+      userIdentifier = userIdentifier || decoded.uid;
+
       const secret = generateBase32Secret(20);
       stagePendingEnrollment(decoded.uid, secret);
 
       const issuer = 'LANZAR ID';
-      const userIdentifier = decoded.email || decoded.uid;
-      const otpauthUrl = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(userIdentifier)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
+      const algorithm = 'SHA1';
+      const digits = 6;
+      const period = 30;
+      const otpauthUrl = buildTotpProvisioningUri({
+        secret,
+        accountName: userIdentifier,
+        issuer,
+        algorithm,
+        digits,
+        period
+      });
 
       return res.json({
         success: true,
         secret,
-        otpauthUrl
+        otpauthUrl,
+        issuer,
+        account: userIdentifier,
+        algorithm,
+        digits,
+        period
       });
     } catch (err) {
       return res.status(401).json({ error: 'invalid_token', error_description: err.message });

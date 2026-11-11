@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { signOutUser } from '../firebase/auth.js'
 import { getAuthApiUrl } from '../config/env.js'
+import TotpQrCode from './TotpQrCode.jsx'
 import './MyLanzarAccount.css'
 
 export default function MyLanzarAccount({ user, onClose = null }) {
@@ -602,17 +603,7 @@ export default function MyLanzarAccount({ user, onClose = null }) {
                   Open <strong>Google Authenticator</strong> or <strong>Microsoft Authenticator</strong>, tap Add Account, and scan the QR code below.
                 </p>
                 <div className="qr-container">
-                  {typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? (
-                    <div className="local-qr-box" style={{ width: 180, height: 180, border: '2px dashed #0284c7', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: '#38bdf8', fontSize: '12px', padding: '12px', boxSizing: 'border-box' }}>
-                      Offline Dev Mode: Use Manual Setup Key Below
-                    </div>
-                  ) : (
-                    <img 
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(totpSetup.otpauthUrl)}`} 
-                      alt="TOTP QR Code" 
-                      className="qr-image"
-                    />
-                  )}
+                  <TotpQrCode otpauthUrl={totpSetup.otpauthUrl} size={180} />
                 </div>
                 <div className="manual-key-wrap">
                   <span className="manual-key-label">Manual Setup Key:</span>

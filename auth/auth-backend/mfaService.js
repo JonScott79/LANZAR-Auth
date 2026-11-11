@@ -141,6 +141,37 @@ function generateBase32Secret(byteLength = 20) {
     return base32Encode(crypto.randomBytes(byteLength));
 }
 
+/**
+ * Builds a standard Key URI (RFC / Google Authenticator / Authy compatible)
+ * for an already-generated TOTP secret without mutating or regenerating it.
+ */
+function buildTotpProvisioningUri({
+    secret,
+    accountName,
+    issuer = 'LANZAR ID',
+    algorithm = 'SHA1',
+    digits = 6,
+    period = 30
+}) {
+    if (!secret || typeof secret !== 'string') {
+        throw new Error('TOTP secret is required to build provisioning URI.');
+    }
+    if (!accountName || typeof accountName !== 'string') {
+        throw new Error('Account identifier is required to build provisioning URI.');
+    }
+    const cleanSecret = secret.replace(/[\s=-]/g, '').toUpperCase();
+    const label = `${encodeURIComponent(issuer)}:${encodeURIComponent(accountName)}`;
+    const params = new URLSearchParams({
+        secret: cleanSecret,
+        issuer,
+        algorithm,
+        digits: String(digits),
+        period: String(period)
+    });
+    // %20 is required instead of '+' for spaces in issuer across mobile authenticators
+    return `otpauth://totp/${label}?${params.toString().replace(/\+/g, '%20')}`;
+}
+
 // ==========================================
 // RFC 6238 TOTP Engine (Compatible with MS & Google Authenticator)
 // ==========================================
@@ -283,6 +314,7 @@ module.exports = {
     getMfaHmacSecret,
     KNOWN_DEV_MFA_SECRETS,
     generateBase32Secret,
+    buildTotpProvisioningUri,
     generateTOTP,
     verifyTOTP,
     encryptTotpSecret,
