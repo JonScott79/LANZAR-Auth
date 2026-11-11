@@ -598,9 +598,9 @@ export default function MyLanzarAccount({ user, onClose = null }) {
             {/* TOTP Setup Ceremony */}
             {totpSetup && (
               <div className="totp-setup-box">
-                <h5 className="totp-setup-heading">Scan QR Code in Authenticator</h5>
+                <h5 className="totp-setup-heading">Scan this QR code with your authenticator app.</h5>
                 <p className="totp-instructions">
-                  Open <strong>Google Authenticator</strong> or <strong>Microsoft Authenticator</strong>, tap Add Account, and scan the QR code below.
+                  Compatible with Microsoft Authenticator, Google Authenticator, Authy, 1Password, and other TOTP-compatible apps.
                 </p>
                 <div className="qr-container">
                   <TotpQrCode otpauthUrl={totpSetup.otpauthUrl} size={180} />

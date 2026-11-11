@@ -408,11 +408,13 @@ async function runTests() {
       await page.waitForSelector('.qr-code-frame svg');
       const uiState = await page.evaluate(() => ({
         instruction: document.querySelector('.qr-instruction')?.textContent?.trim(),
+        supportedApps: document.querySelector('.qr-supported-apps')?.textContent?.trim(),
         hasSvg: Boolean(document.querySelector('.qr-code-frame svg path')),
         hasImgInQr: Boolean(document.querySelector('.qr-code-frame img')),
         manualHiddenInitially: !document.getElementById('manual-setup-key-panel')
       }));
       check('UI renders instruction "Scan this QR code with your authenticator app."', uiState.instruction === 'Scan this QR code with your authenticator app.');
+      check('UI renders vendor-agnostic TOTP compatibility text', uiState.supportedApps === 'Compatible with Microsoft Authenticator, Google Authenticator, Authy, 1Password, and other TOTP-compatible apps.');
       check('UI renders local SVG QR code with zero <img> tags', uiState.hasSvg && !uiState.hasImgInQr);
       check('Manual setup key is collapsed initially behind toggle', uiState.manualHiddenInitially);
 

@@ -305,7 +305,15 @@
   font-size: 0.85rem;
   font-weight: 800;
   color: var(--deep-navy);
-  margin: 0 0 0.75rem 0;
+  margin: 0 0 0.35rem 0;
+}
+
+.qr-supported-apps {
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  margin: 0 0 0.85rem 0;
 }
 
 .qr-code-frame {

@@ -364,7 +364,7 @@ export default function Login({
         <div className="login-panel mfa-panel">
           <h2 className="login-title">SECURITY SETUP: MFA</h2>
           <p className="login-desc">
-            Administrator accounts require Multi-Factor Authentication. Pair Google Authenticator, Authy, 1Password, or any TOTP app.
+            Administrator accounts require Multi-Factor Authentication. Set up an authenticator app to secure your account.
           </p>
 
           {!mfaEnrollSecret || !mfaOtpauthUrl ? (
@@ -389,6 +389,9 @@ export default function Login({
             <form onSubmit={(e) => handleCompleteMfaEnrollment(e, mfaChallenge.user)} className="login-form">
               <div className="qr-enrollment-box">
                 <p className="qr-instruction">Scan this QR code with your authenticator app.</p>
+                <p className="qr-supported-apps">
+                  Compatible with Microsoft Authenticator, Google Authenticator, Authy, 1Password, and other TOTP-compatible apps.
+                </p>
                 <TotpQrCode otpauthUrl={mfaOtpauthUrl} size={184} />
                 <div className="manual-key-toggle-wrap">
                   <button
