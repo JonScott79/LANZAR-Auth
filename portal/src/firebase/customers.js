@@ -125,10 +125,25 @@ export async function getAuthorizedCustomer(uid) {
   return customer
 }
 
-export async function getOrCreateAuthorizedCustomer(firebaseUser) {
+export async function getOrCreateAuthorizedCustomer(firebaseUser, options = {}) {
   if (!firebaseUser?.uid) return null;
 
-  const existingCustomer = await getCustomer(firebaseUser.uid);
+  const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : 12000;
+  let readTimer;
+  const existingCustomer = await Promise.race([
+    getCustomer(firebaseUser.uid),
+    new Promise((_, reject) => {
+      readTimer = setTimeout(() => {
+        const err = new Error('Timed out loading customer workspace profile.');
+        err.code = 'ERR_TIMEOUT';
+        err.stage = 'profile_resolve';
+        reject(err);
+      }, timeoutMs);
+    })
+  ]).finally(() => {
+    if (readTimer !== undefined) clearTimeout(readTimer);
+  });
+
   if (existingCustomer) {
     // A profile exists: honor its status. Suspended / inactive accounts must never be auto-provisioned.
     return existingCustomer.active === true ? existingCustomer : null;
@@ -147,11 +162,21 @@ export async function getOrCreateAuthorizedCustomer(firebaseUser) {
     createdAt: new Date().toISOString()
   };
 
+  let writeTimer;
   try {
     const userRef = doc(db, 'users', firebaseUser.uid);
-    await setDoc(userRef, newProfile, { merge: true });
+    await Promise.race([
+      setDoc(userRef, newProfile, { merge: true }),
+      new Promise((_, reject) => {
+        writeTimer = setTimeout(() => {
+          reject(new Error('Profile provisioning write timed out'));
+        }, timeoutMs);
+      })
+    ]);
   } catch (err) {
     console.warn('[AUTH] Could not write users collection:', err.message);
+  } finally {
+    if (writeTimer !== undefined) clearTimeout(writeTimer);
   }
 
   return {

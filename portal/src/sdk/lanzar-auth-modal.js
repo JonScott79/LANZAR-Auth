@@ -191,20 +191,45 @@ async function exchangeCodeForSession(options = {}, config = STAGING_CONFIG) {
   }
 
   const apiBase = options.authApiBase || config.authApiBase;
-  const res = await fetch(`${apiBase}/exchange`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      code,
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      code_verifier: codeVerifier
-    })
-  });
+  const timeoutMs = Number.isFinite(options.timeoutMs)
+    ? options.timeoutMs
+    : (config?.requestTimeoutMs || 15000);
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  let timedOut = false;
+  const timerId = controller
+    ? setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, timeoutMs)
+    : null;
 
-  const data = await res.json();
+  let res;
+  try {
+    res = await fetch(`${apiBase}/exchange`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code,
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        code_verifier: codeVerifier
+      }),
+      ...(controller ? { signal: controller.signal } : {})
+    });
+  } catch (err) {
+    if (timedOut) {
+      const timeoutErr = new Error('Authorization exchange timed out while contacting LANZAR ID. Please try again.');
+      timeoutErr.code = 'ERR_TIMEOUT';
+      throw timeoutErr;
+    }
+    throw err;
+  } finally {
+    if (timerId !== null) clearTimeout(timerId);
+  }
+
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = new Error(data.error_description || data.error || 'Token exchange failed.');
+    const err = new Error(data.error_description || data.error || `Token exchange failed (HTTP ${res.status}).`);
     err.code = data.error || 'exchange_error';
     err.details = data;
     throw err;

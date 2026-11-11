@@ -5,12 +5,26 @@ import {
   PRODUCTION_CONFIG 
 } from '../sdk/lanzar-auth-modal.js'
 import { signInWithCustomToken } from '../firebase/auth.js'
+import { withTimeout } from '../utils/asyncTimeout.js'
 import './Login.css'
 
-export default function Login({ authError: globalAuthError, unauthorized, handleSignOut }) {
+export default function Login({
+  authError: globalAuthError,
+  unauthorized,
+  handleSignOut,
+  onRetry,
+  errorTitle,
+  errorDescription,
+  retryLabel = 'RETRY INITIALIZATION'
+}) {
   const [loadingMsg, setLoadingMsg] = useState('')
   const [localError, setLocalError] = useState(null)
   const modalRef = useRef(null)
+  const loadingMsgRef = useRef('')
+
+  useEffect(() => {
+    loadingMsgRef.current = loadingMsg
+  }, [loadingMsg])
 
   const activeConfig = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? DEVELOPMENT_CONFIG
@@ -27,6 +41,7 @@ export default function Login({ authError: globalAuthError, unauthorized, handle
       const detail = event.detail
       if (!detail || !detail.code || !detail.codeVerifier) {
         setLocalError('Authentication handshake failed: missing code or verifier.')
+        setLoadingMsg('')
         return
       }
 
@@ -38,14 +53,20 @@ export default function Login({ authError: globalAuthError, unauthorized, handle
           code: detail.code,
           clientId: 'portal',
           redirectUri: window.location.origin,
-          codeVerifier: detail.codeVerifier
+          codeVerifier: detail.codeVerifier,
+          timeoutMs: 15000
         }, activeConfig)
 
         if (session.session_id) {
           sessionStorage.setItem('lanzar_session_id', session.session_id)
         }
 
-        await signInWithCustomToken(session.custom_token)
+        await withTimeout(
+          signInWithCustomToken(session.custom_token),
+          15000,
+          'Firebase authentication timed out. Please try again.',
+          'firebase_signin'
+        )
       } catch (err) {
         console.error('[AUTH MODAL ERROR]', err)
         setLocalError(err.message || 'Failed to exchange authorization code for session.')
@@ -54,7 +75,7 @@ export default function Login({ authError: globalAuthError, unauthorized, handle
     }
 
     const handleClosed = () => {
-      if (loadingMsg === 'Opening LANZAR ID...') {
+      if (loadingMsgRef.current === 'Opening LANZAR ID...') {
         setLoadingMsg('')
       }
     }
@@ -66,7 +87,7 @@ export default function Login({ authError: globalAuthError, unauthorized, handle
       modal.removeEventListener('lanzar:authenticated', handleAuthenticated)
       modal.removeEventListener('lanzar:closed', handleClosed)
     }
-  }, [activeConfig, loadingMsg])
+  }, [activeConfig])
 
   // Option 1: Embedded Modal flow (Default)
   const handleModalLogin = () => {
@@ -102,14 +123,20 @@ export default function Login({ authError: globalAuthError, unauthorized, handle
         code: result.code,
         clientId: 'portal',
         redirectUri: window.location.origin,
-        codeVerifier: result.codeVerifier
+        codeVerifier: result.codeVerifier,
+        timeoutMs: 15000
       }, activeConfig)
 
       if (session.session_id) {
         sessionStorage.setItem('lanzar_session_id', session.session_id)
       }
 
-      await signInWithCustomToken(session.custom_token)
+      await withTimeout(
+        signInWithCustomToken(session.custom_token),
+        15000,
+        'Firebase authentication timed out. Please try again.',
+        'firebase_signin'
+      )
     } catch (err) {
       console.error('[AUTH POPUP ERROR]', err)
       setLocalError(err.message || 'Popup authentication failed.')
@@ -144,14 +171,30 @@ export default function Login({ authError: globalAuthError, unauthorized, handle
     }
   }
 
-  // Unauthorized Access Denied View
+  // Unauthorized Access Denied / Recovery View
   if (unauthorized) {
     return (
       <div className="login-panel">
-        <h2 className="login-title">ACCESS DENIED</h2>
-        <p className="login-desc">You do not have customer access to this portal.</p>
+        <h2 className="login-title">{errorTitle || 'ACCESS DENIED'}</h2>
+        <p className="login-desc">{errorDescription || 'You do not have customer access to this portal.'}</p>
         {(localError || globalAuthError) && <p className="error-msg">{localError || globalAuthError}</p>}
-        <button className="primary-btn" onClick={handleSignOut}>SIGN OUT</button>
+        <div className="form-actions">
+          {typeof onRetry === 'function' && (
+            <button type="button" id="btnRetryInit" className="primary-btn" onClick={onRetry}>
+              {retryLabel}
+            </button>
+          )}
+          {typeof handleSignOut === 'function' && (
+            <button
+              type="button"
+              id="btnSignOutUnauthorized"
+              className={typeof onRetry === 'function' ? 'text-link' : 'primary-btn'}
+              onClick={handleSignOut}
+            >
+              SIGN OUT
+            </button>
+          )}
+        </div>
       </div>
     )
   }

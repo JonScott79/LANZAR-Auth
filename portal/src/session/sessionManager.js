@@ -12,6 +12,7 @@
 */
 
 import { auth } from '../firebase/auth.js'
+import { withTimeout, fetchWithTimeout } from '../utils/asyncTimeout.js'
 
 export const SESSION_STORAGE_KEY = 'lanzar_session_id'
 
@@ -131,30 +132,46 @@ export async function authFetch(url, options = {}) {
 // Session validation / restoration
 // ==========================
 
+const DEFAULT_SESSION_TIMEOUT_MS = 12000
+
 /**
  * Validates the current Firebase user's LANZAR ID session with the trusted backend.
  * Returns { status, ... } where status is one of:
  *   'valid' | 'revoked' | 'expired' | 'invalid' | 'suspended' | 'no_session' | 'unavailable'
  * On 'valid' the payload includes uid, email, session_id, expires_at and is_admin (server-resolved).
  */
-export async function validateSession() {
+export async function validateSession({ timeoutMs = DEFAULT_SESSION_TIMEOUT_MS } = {}) {
   const user = auth.currentUser
   if (!user) return { status: 'invalid' }
 
   let token
   try {
-    token = await user.getIdToken()
+    token = await withTimeout(
+      user.getIdToken(),
+      timeoutMs,
+      'Timed out retrieving authentication credentials.',
+      'session_validate'
+    )
   } catch (err) {
+    if (err?.code === 'ERR_TIMEOUT') {
+      return { status: 'unavailable', error: err.message }
+    }
     return { status: 'revoked' }
   }
 
   let res
   try {
-    res = await fetch(`${AUTH_API_BASE}/api/id/session/validate`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    res = await fetchWithTimeout(
+      `${AUTH_API_BASE}/api/id/session/validate`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+      timeoutMs,
+      'Timed out verifying your LANZAR ID session.',
+      'session_validate'
+    )
   } catch (err) {
-    return { status: 'unavailable' }
+    return { status: 'unavailable', error: err?.message }
   }
 
   const body = await res.json().catch(() => ({}))
