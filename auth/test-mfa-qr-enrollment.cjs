@@ -286,6 +286,7 @@ async function runTests() {
             import './src/index.css';
             import './src/theme.css';
             import Login from './src/pages/Login.jsx';
+            import './src/components/MyLanzarAccount.css';
             const mockUser = {
               uid: 'admin-uid-browser',
               email: 'browser.admin@lanzar.me',
@@ -457,8 +458,19 @@ async function runTests() {
       await page.type('#mfa-verify-code', liveValidCode);
       await page.click('button[type="submit"]');
       await page.waitForSelector('.recovery-code-grid', { timeout: 8000 });
-      const recCount = await page.$$eval('.recovery-code-pill', (els) => els.length);
-      check('Valid 6-digit code activates MFA in UI and displays 8 recovery codes', recCount === 8);
+      const recState = await page.evaluate(() => {
+        const desc = document.querySelector('.recovery-desc');
+        const pill = document.querySelector('.recovery-code-pill');
+        return {
+          count: document.querySelectorAll('.recovery-code-pill').length,
+          descColor: desc ? getComputedStyle(desc).color : null,
+          pillBg: pill ? getComputedStyle(pill).backgroundColor : null,
+          pillColor: pill ? getComputedStyle(pill).color : null
+        };
+      });
+      check('Valid 6-digit code activates MFA in UI and displays 8 recovery codes', recState.count === 8);
+      check('Recovery description uses high-contrast dark slate color even alongside MyLanzarAccount.css', recState.descColor === 'rgb(51, 65, 85)', recState.descColor);
+      check('Recovery code pills use light background and dark navy ink in Login card', recState.pillBg === 'rgb(241, 245, 249)' && recState.pillColor === 'rgb(32, 48, 60)', `${recState.pillColor} on ${recState.pillBg}`);
       check('Zero external requests made during entire browser QR enrollment flow', externalRequests.length === 0, `externalRequests=${externalRequests.length}`);
     } finally {
       if (browser) await browser.close();

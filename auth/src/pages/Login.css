@@ -414,37 +414,47 @@
   margin-bottom: 0;
 }
 
-.recovery-codes-box {
+.login-panel ::selection {
+  background: var(--deep-navy);
+  color: #ffffff;
+}
+
+.login-panel .recovery-codes-box {
+  background: transparent;
+  border: none;
+  padding: 0;
+  display: block;
   text-align: center;
 }
 
-.recovery-title {
+.login-panel .recovery-title {
   font-family: var(--font-heading);
   color: var(--deep-navy);
-  margin: 1rem 0 0.25rem 0;
+  margin: 1rem 0 0.35rem 0;
   font-size: 1rem;
 }
 
-.recovery-desc {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  margin-bottom: 1rem;
+.login-panel .recovery-desc {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #334155;
+  margin: 0 0 1rem 0;
 }
 
-.recovery-code-grid {
+.login-panel .recovery-code-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.5rem;
   margin-bottom: 1rem;
 }
 
-.recovery-code-pill {
-  background: #eceff1;
-  padding: 0.4rem 0.6rem;
+.login-panel .recovery-code-pill {
+  background: #f1f5f9;
+  padding: 0.45rem 0.6rem;
   font-family: var(--font-code);
   font-weight: bold;
   font-size: 0.85rem;
-  border: 1px solid #cfd8dc;
+  border: 1.5px solid #cbd5e1;
   border-radius: var(--radius-sm);
   color: var(--deep-navy);
 }
