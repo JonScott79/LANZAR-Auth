@@ -23,6 +23,7 @@ import {
   updateProfile,
   sendEmailVerification,
   sendPasswordResetEmail,
+  signInWithCustomToken as fbSignInWithCustomToken,
 } from 'firebase/auth'
 
 import app from './config.js'
@@ -124,6 +125,10 @@ export async function sendEmailVerificationToUser(user) {
 
 export async function sendPasswordReset(email) {
   await sendPasswordResetEmail(auth, email)
+}
+
+export async function signInWithCustomToken(token) {
+  return await fbSignInWithCustomToken(auth, token)
 }
 
 // ==========================

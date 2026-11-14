@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { signOutUser } from '../firebase/auth.js'
+import { signOutUser, sendPasswordReset } from '../firebase/auth.js'
 import { getAuthApiUrl } from '../config/env.js'
 import TotpQrCode from './TotpQrCode.jsx'
 import './MyLanzarAccount.css'
@@ -262,15 +262,12 @@ export default function MyLanzarAccount({ user, onClose = null }) {
   // Password Recovery Trigger
   const handleTriggerPasswordReset = async () => {
     try {
-      const res = await fetch(`${authBackendUrl}/password/forgot`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: profile?.email || user.email })
-      })
-      if (!res.ok) throw new Error('Failed to send reset link')
+      const targetEmail = profile?.email || user.email
+      if (!targetEmail) throw new Error('No email address associated with this account.')
+      await sendPasswordReset(targetEmail)
       notify('Password reset email dispatched to your inbox.', 'info')
     } catch (err) {
-      notify(err.message, 'error')
+      notify(err.message || 'Failed to send reset link', 'error')
     }
   }
 

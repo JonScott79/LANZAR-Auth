@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
-import { auth, signOutUser } from './firebase/auth.js'
+import { auth, signOutUser, signInWithCustomToken } from './firebase/auth.js'
 import Login from './pages/Login.jsx'
 import MyLanzarAccount from './components/MyLanzarAccount.jsx'
 import { getAuthApiUrl } from './config/env.js'
@@ -100,6 +100,8 @@ function App() {
         return
       }
 
+      await establishCentralSession(idToken)
+
       const targetUrl = new URL(redirectUri)
       targetUrl.searchParams.set('code', data.code)
       if (data.state) {
@@ -138,23 +140,103 @@ function App() {
     }
   }
 
+  const establishCentralSession = async (idToken) => {
+    try {
+      await fetch(`${getAuthApiUrl()}/api/id/session/establish`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+          'X-Lanzar-Client': 'id'
+        }
+      })
+    } catch (_) {
+      // Non-fatal: individual flow still succeeds if central cookie refresh is rejected (e.g. stale auth_time)
+    }
+  }
+
+  const establishCentralAndStandaloneSession = async (firebaseUser) => {
+    try {
+      const tokenResult = await firebaseUser.getIdTokenResult()
+      const idToken = tokenResult?.token || (await firebaseUser.getIdToken())
+      const hasSessionClaim = Boolean(
+        tokenResult?.claims?.session_id || tokenResult?.claims?.lanzarSessionId
+      )
+
+      await establishCentralSession(idToken)
+
+      if (!hasSessionClaim) {
+        const res = await fetch(`${getAuthApiUrl()}/api/id/session/standalone`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            'Content-Type': 'application/json',
+            'X-Lanzar-Client': 'id'
+          }
+        })
+        if (res.status === 401 || res.status === 403) {
+          const errData = await res.json().catch(() => ({}))
+          if (errData.error === 'account_suspended' || errData.error === 'session_revoked') {
+            setErrorMsg(errData.error_description || 'Your session is no longer active. Please sign in again.')
+            await signOutUser()
+            return { signedOut: true }
+          }
+        }
+        if (res.ok) {
+          const data = await res.json()
+          const customToken = data.custom_token || data.customToken
+          if (customToken) {
+            await signInWithCustomToken(customToken)
+            return { upgraded: true }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[AUTH] Standalone session binding notice:', err.message)
+    }
+    return { upgraded: false }
+  }
+
   useEffect(() => {
     if (params.get('logout') === 'true') {
       const targetRedirect = redirectUri || 'https://lanzar.me'
       const cleanRedirect = isAllowedRedirect(targetRedirect) ? targetRedirect : 'https://lanzar.me'
-      signOutUser().finally(() => {
+      Promise.allSettled([
+        fetch(`${getAuthApiUrl()}/api/id/session/logout`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'X-Lanzar-Client': 'id' }
+        }),
+        signOutUser()
+      ]).finally(() => {
         window.location.replace(cleanRedirect)
       })
       return
     }
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        setUser(null)
+        setLoading(false)
+        return
+      }
+
+      if (isOAuthFlow) {
+        setUser(firebaseUser)
+        setLoading(false)
+        await executeAuthorizeFlow(firebaseUser)
+        return
+      }
+
+      const result = await establishCentralAndStandaloneSession(firebaseUser)
+      if (result.upgraded || result.signedOut) {
+        return
+      }
+
       setUser(firebaseUser)
       setLoading(false)
-
-      if (firebaseUser && isOAuthFlow) {
-        await executeAuthorizeFlow(firebaseUser)
-      }
     })
     return () => unsubscribe()
   }, [])

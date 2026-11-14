@@ -90,7 +90,7 @@ class CentralSessionService {
    * Idempotently exchanges a central session for a Firebase Custom Token bound to a child session slot.
    * Strict OD-6 check: denied to auth_hub and marketing_site.
    */
-  async exchangeChildSessionToken({ uid, centralSessionId, clientAppId }) {
+  async exchangeChildSessionToken({ uid, centralSessionId, clientAppId, ipAddress = null, userAgent = null }) {
     const now = Math.floor(Date.now() / 1000);
 
     // OD-6 Enforcement: Denied to auth_hub and marketing_site
@@ -186,10 +186,17 @@ class CentralSessionService {
         assignedSessionId = `sess_${Date.now()}_${crypto.randomBytes(12).toString('hex')}`;
         const childExpiresAt = Math.min(parent.absoluteExpiresAt, now + 24 * 60 * 60); // 24-hour child expiry
         const newChildDoc = {
+          sessionId: assignedSessionId,
+          uid,
           centralSessionId,
           clientApp: clientAppId,
+          clientId: clientAppId,
+          deviceName: `LANZAR SSO (${clientAppId})`,
+          browser: userAgent ? String(userAgent).slice(0, 150) : 'LANZAR Central SSO',
+          ipAddress: ipAddress || 'unknown',
           tokenVersionAtIssue: tokenVersion,
           createdAt: now,
+          lastSeenAt: now,
           expiresAt: childExpiresAt,
           revoked: false,
           revokedAt: null
@@ -220,6 +227,9 @@ class CentralSessionService {
 
     // 5. Mint Firebase Custom Token with claims outside transaction
     const customClaims = {
+      session_id: assignedSessionId,
+      tenant_id: 'lanzar',
+      client_id: clientAppId,
       lanzarSessionId: assignedSessionId,
       lanzarTokenVersion: tokenVersion,
       lanzarClientApp: clientAppId
@@ -229,7 +239,9 @@ class CentralSessionService {
 
     return {
       customToken,
+      custom_token: customToken,
       sessionId: assignedSessionId,
+      session_id: assignedSessionId,
       clientAppId,
       tokenVersion
     };

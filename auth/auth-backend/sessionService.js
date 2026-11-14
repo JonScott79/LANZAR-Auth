@@ -25,6 +25,35 @@ class SessionService {
     }
 
     /**
+     * Converts numeric Unix seconds/milliseconds, ISO strings, or Firestore Timestamps to epoch ms.
+     */
+    parseExpiresAtMs(val) {
+        if (val === null || val === undefined) return null;
+        if (typeof val === 'number' && Number.isFinite(val)) {
+            return val < 1e12 ? val * 1000 : val;
+        }
+        if (typeof val.toDate === 'function') {
+            return val.toDate().getTime();
+        }
+        const ms = new Date(val).getTime();
+        return Number.isFinite(ms) ? ms : null;
+    }
+
+    /**
+     * Normalizes numeric Unix seconds/ms or Firestore Timestamps to ISO strings for client display.
+     */
+    normalizeTimestamp(val) {
+        if (val === null || val === undefined) return null;
+        if (typeof val === 'number' && Number.isFinite(val)) {
+            return new Date(val < 1e12 ? val * 1000 : val).toISOString();
+        }
+        if (typeof val.toDate === 'function') {
+            return val.toDate().toISOString();
+        }
+        return val;
+    }
+
+    /**
      * Testing/administrative helper to clear process-local session cache
      */
     clearCache() {
@@ -145,13 +174,29 @@ class SessionService {
             }
 
             let reason = 'active';
+            const expMs = this.parseExpiresAtMs(data.expiresAt);
+            const nowMs = Date.now();
             if (data.revoked === true) {
                 reason = 'revoked';
-            } else if (data.expiresAt && new Date(data.expiresAt) < new Date()) {
+            } else if (expMs !== null && expMs < nowMs) {
                 reason = 'expired';
+            } else if (data.centralSessionId) {
+                const parentSnap = await this.db.collection('users').doc(uid)
+                    .collection('central_sessions').doc(data.centralSessionId)
+                    .get();
+                if (!parentSnap.exists || parentSnap.data().revoked === true) {
+                    reason = 'revoked';
+                } else {
+                    const parentData = parentSnap.data();
+                    const absMs = this.parseExpiresAtMs(parentData.absoluteExpiresAt);
+                    const idleMs = this.parseExpiresAtMs(parentData.idleExpiresAt);
+                    if ((absMs !== null && absMs < nowMs) || (idleMs !== null && idleMs < nowMs)) {
+                        reason = 'expired';
+                    }
+                }
             }
             const isRevoked = reason !== 'active';
-            const expiresAt = data.expiresAt || null;
+            const expiresAt = this.normalizeTimestamp(data.expiresAt);
             sessionCache.set(cacheKey, { uid, revoked: isRevoked, reason, expiresAt, checkedAt: Date.now() });
             return { active: !isRevoked, reason, expiresAt };
         } catch (err) {
@@ -247,7 +292,20 @@ class SessionService {
             });
         });
 
-        if (!sessionsSnapshot.empty) {
+        // 4. Also revoke any active parent central_sessions so silent SSO stops immediately
+        const centralSnaps = await userRef.collection('central_sessions')
+            .where('revoked', '==', false)
+            .get();
+        const centralRevokedAt = Math.floor(Date.now() / 1000);
+        centralSnaps.forEach(doc => {
+            batch.update(doc.ref, {
+                revoked: true,
+                revokedAt: centralRevokedAt,
+                revokedReason: 'global_revocation'
+            });
+        });
+
+        if (!sessionsSnapshot.empty || !centralSnaps.empty) {
             await batch.commit();
         }
 
@@ -278,13 +336,13 @@ class SessionService {
         return snap.docs.map(doc => {
             const data = doc.data();
             return {
-                sessionId: data.sessionId,
-                clientId: data.clientId,
-                deviceName: data.deviceName,
-                browser: data.browser,
-                ipAddress: data.ipAddress,
-                createdAt: data.createdAt,
-                lastSeenAt: data.lastSeenAt,
+                sessionId: data.sessionId || doc.id,
+                clientId: data.clientId || data.clientApp || 'unknown',
+                deviceName: data.deviceName || (data.clientApp ? `LANZAR SSO (${data.clientApp})` : 'Web Client'),
+                browser: data.browser || 'Central SSO Session',
+                ipAddress: data.ipAddress || 'unknown',
+                createdAt: this.normalizeTimestamp(data.createdAt),
+                lastSeenAt: this.normalizeTimestamp(data.lastSeenAt || data.createdAt),
                 revoked: data.revoked === true
             };
         });

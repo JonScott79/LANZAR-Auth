@@ -107,6 +107,7 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
 
   const deviceSessionRouter = createDeviceSessionRouter({
     db,
+    authAdmin,
     sessionService,
     authenticateUserMiddleware: authMiddleware.authenticateUserMiddleware,
     isUserAdmin: authMiddleware.isUserAdmin

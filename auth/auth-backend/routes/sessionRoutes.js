@@ -152,7 +152,9 @@ function createSessionRouter({ centralSessionService, cookieService, authAdmin, 
       const result = await centralSessionService.exchangeChildSessionToken({
         uid: payload.uid,
         centralSessionId: payload.sid,
-        clientAppId
+        clientAppId,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent']
       });
 
       return res.status(200).json(result);

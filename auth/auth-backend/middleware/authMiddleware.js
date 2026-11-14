@@ -49,7 +49,13 @@ function createAuthMiddleware({ db, authAdmin, sessionService }) {
       }
 
       // Mandatory LANZAR ID Session Enforcement (LID-SEC-004)
-      if (!decoded.session_id || typeof decoded.session_id !== 'string' || !decoded.session_id.trim()) {
+      const sessionId = (typeof decoded.session_id === 'string' && decoded.session_id.trim())
+        ? decoded.session_id.trim()
+        : ((typeof decoded.lanzarSessionId === 'string' && decoded.lanzarSessionId.trim())
+          ? decoded.lanzarSessionId.trim()
+          : null);
+
+      if (!sessionId) {
         return res.status(401).json({
           error: 'missing_session',
           error_description: 'Authentication token is missing a valid LANZAR ID session identifier.'
@@ -64,12 +70,12 @@ function createAuthMiddleware({ db, authAdmin, sessionService }) {
         });
       }
 
-      req.sessionId = decoded.session_id;
+      req.sessionId = sessionId;
 
       // Validate session against authoritative server-side record with UID binding
       const state = typeof sessionService.checkSession === 'function'
-        ? await sessionService.checkSession(decoded.uid, decoded.session_id)
-        : { active: !(await sessionService.isSessionRevoked(decoded.uid, decoded.session_id)), reason: 'active' };
+        ? await sessionService.checkSession(decoded.uid, sessionId)
+        : { active: !(await sessionService.isSessionRevoked(decoded.uid, sessionId)), reason: 'active' };
 
       if (!state.active) {
         if (state.reason === 'expired') {

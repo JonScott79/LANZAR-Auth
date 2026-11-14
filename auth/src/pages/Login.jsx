@@ -115,9 +115,47 @@ export default function Login({
     try {
       await signInWithEmail(email, password)
     } catch (err) {
+      if (
+        err.code === 'auth/invalid-credential' ||
+        err.code === 'auth/user-not-found' ||
+        err.code === 'auth/wrong-password'
+      ) {
+        try {
+          const bridgeRes = await fetch(`${getAuthApiUrl()}/login/legacy-bridge`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+          })
+          const bridgeData = await bridgeRes.json().catch(() => ({}))
+          if (bridgeRes.ok && bridgeData?.success) {
+            await signInWithEmail(email, password)
+            return
+          }
+          if (bridgeRes.status === 403) {
+            setLocalError(bridgeData.error_description || 'This account has been suspended.')
+            return
+          }
+          if (bridgeRes.status === 429) {
+            setLocalError(bridgeData.error_description || 'Too many failed attempts. Please try again later.')
+            return
+          }
+        } catch (bridgeErr) {
+          if (
+            bridgeErr.code &&
+            bridgeErr.code !== 'auth/invalid-credential' &&
+            bridgeErr.code !== 'auth/user-not-found' &&
+            bridgeErr.code !== 'auth/wrong-password'
+          ) {
+            setLocalError(bridgeErr.message || 'Sign in failed.')
+            return
+          }
+        }
+      }
       let message = 'Incorrect email or password.'
       if (err.code === 'auth/invalid-email') message = 'Please enter a valid email address.'
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') message = 'Invalid email or password.'
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        message = 'Invalid email or password.'
+      }
       if (err.code === 'auth/too-many-requests') message = 'Account temporarily disabled due to too many failed attempts.'
       setLocalError(message)
     } finally {

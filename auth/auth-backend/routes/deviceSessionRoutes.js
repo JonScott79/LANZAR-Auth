@@ -3,8 +3,85 @@
 
 const express = require('express');
 
-function createDeviceSessionRouter({ db, sessionService, authenticateUserMiddleware, isUserAdmin }) {
+function createDeviceSessionRouter({ db, authAdmin, sessionService, authenticateUserMiddleware, isUserAdmin }) {
   const router = express.Router();
+
+  /**
+   * Upgrades a standard Firebase ID token minted on auth_hub standalone sign-in
+   * into a session_id-bound Firebase Custom Token so /api/id/* endpoints succeed.
+   */
+  router.post('/session/standalone', async (req, res) => {
+    try {
+      if (req.clientAppId && req.clientAppId !== 'auth_hub') {
+        return res.status(403).json({
+          error: 'client_app_not_permitted',
+          error_description: 'Standalone session binding is restricted to auth_hub.'
+        });
+      }
+
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({
+          error: 'unauthorized',
+          error_description: 'Missing Authorization Bearer token.'
+        });
+      }
+
+      const idToken = authHeader.split('Bearer ')[1].trim();
+      const decoded = await authAdmin.verifyIdToken(idToken, true);
+
+      const userDoc = await db.collection('users').doc(decoded.uid).get();
+      if (userDoc.exists && userDoc.data().status === 'suspended') {
+        return res.status(403).json({
+          error: 'account_suspended',
+          error_description: 'This account has been suspended.'
+        });
+      }
+
+      const existingSessionId = (typeof decoded.session_id === 'string' && decoded.session_id.trim())
+        || (typeof decoded.lanzarSessionId === 'string' && decoded.lanzarSessionId.trim())
+        || null;
+
+      if (existingSessionId) {
+        const state = await sessionService.checkSession(decoded.uid, existingSessionId);
+        if (state.active) {
+          return res.json({
+            session_id: existingSessionId,
+            already_bound: true
+          });
+        }
+        return res.status(401).json({
+          error: 'session_revoked',
+          error_description: 'This session has been revoked or expired. Please sign in again.'
+        });
+      }
+
+      const sessionRecord = await sessionService.createSession({
+        uid: decoded.uid,
+        clientId: 'lanzar-auth-hub',
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        deviceName: 'LANZAR ID Account Portal'
+      });
+
+      const customToken = await authAdmin.createCustomToken(decoded.uid, {
+        session_id: sessionRecord.sessionId,
+        tenant_id: 'lanzar',
+        client_id: 'lanzar-auth-hub'
+      });
+
+      return res.json({
+        custom_token: customToken,
+        customToken,
+        session_id: sessionRecord.sessionId
+      });
+    } catch (err) {
+      if (err.code === 'auth/id-token-revoked') {
+        return res.status(401).json({ error: 'token_revoked', error_description: 'Token has been revoked. Please sign in again.' });
+      }
+      return res.status(401).json({ error: 'invalid_token', error_description: err.message });
+    }
+  });
 
   // Session validation & server-side identity resolution for relying clients (e.g. Portal).
   // authenticateUserMiddleware has already: verified the ID token (checkRevoked), rejected
