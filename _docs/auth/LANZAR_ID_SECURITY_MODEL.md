@@ -200,3 +200,30 @@ Application-level append-only logic is insufficient to guarantee audit integrity
 2. **Role Separation (GCP IAM):** The runtime service account used by client frontends has zero permissions to alter Firestore rules or truncate collections.
 3. **Automated Cloud Audit Export:** Every 24 hours, a scheduled Cloud Function streams all security logs from Firestore to an immutable Google Cloud Storage bucket configured with **Object Retention Lock (WORM - Write Once, Read Many)**. Even a project owner cannot delete logs within the retention window (minimum 365 days).
 4. **Log Content Sanitization:** Log entries record actor UID, IP, user-agent, action name, and target resource, but NEVER record passwords, plaintext tokens, TOTP secrets, or recovery codes.
+
+---
+
+## 7. Security Milestones & Remediation Register
+
+### 7.1 Priority 1 Remediation (Formally Closed)
+* **Accepted Baseline Commit:** `62d2df807352377c86570c9ec3bb3bb2816911c4`
+* **Branch:** `lanzar_id_main_chat`
+* **Closed Findings:**
+  * **LID-SEC-004:** Mandatory LANZAR ID session enforcement, UID binding, rejection of unauthenticated/unassociated tokens.
+  * **LID-SEC-002:** Application-level in-memory rate limiting for OAuth (`/authorize`, `/exchange`), MFA (`/mfa/verify`), and phone OTP (`/phone/send-otp`).
+  * **LID-SEC-005:** Static MFA HMAC secret fallback elimination; length and entropy validation via `bootstrap.js`.
+* **Authoritative Session Storage:** Confirmed at `/users/{uid}/sessions/{sessionId}`.
+* **Verification Reference:** [`LANZAR_ID_PRIORITY1_FINAL_VERIFICATION_REPORT.md`](file:///C:/Users/jonny/.gemini/antigravity/brain/181f70b2-f3a3-4005-b91d-fd091daec5b7/LANZAR_ID_PRIORITY1_FINAL_VERIFICATION_REPORT.md).
+
+### 7.2 Active Milestone: Pre-Production Security Hardening
+A separate milestone tracks all outstanding pre-production security and architecture hardening items.
+* **Master Tracking Document:** [`_docs/auth/LANZAR_ID_PRE_PRODUCTION_SECURITY_HARDENING.md`](file:///C:/Users/jonny/.gemini/antigravity/worktrees/lanzar/lanzar_id_main_chat/_docs/auth/LANZAR_ID_PRE_PRODUCTION_SECURITY_HARDENING.md)
+* **Outstanding Findings Tracked:**
+  * `LID-VER-001` (Low): Rate-limiter upper memory bounds (`MAX_ENTRIES`).
+  * `LID-VER-002` (Medium): Dual-key MFA failure throttling (combining account and IP protections).
+  * `LID-VER-003` (Medium): Express reverse-proxy `trust proxy` configuration for cloud hosting.
+  * `LID-VER-004` (High): Fail-closed startup bootstrap validation in `server.js`.
+  * `LID-VER-005` (Medium): Robust environment derivation preventing accidental development fallback.
+  * `LID-SEC-001` (High): Distributed authorization-code storage for multi-instance operation.
+  * `LID-SEC-003` (Medium): Distributed session-cache invalidation across cluster instances.
+

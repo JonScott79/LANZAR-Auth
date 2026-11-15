@@ -16,6 +16,7 @@ const { getAuth } = require('firebase-admin/auth');
 const { getFirestore } = require('firebase-admin/firestore');
 const { createApp } = require('./app');
 const { bootstrap } = require('./config/bootstrap');
+const { FirestoreAuthorizationCodeStore, validateReceiptKeyConfiguration } = require('./store');
 
 // =========================================================================
 // Fail-Closed Startup Validation (LID-VER-004 & LID-VER-005)
@@ -25,6 +26,7 @@ const { bootstrap } = require('./config/bootstrap');
 let config;
 try {
     config = bootstrap(process.env);
+    validateReceiptKeyConfiguration(process.env);
 } catch (err) {
     console.error(`❌ [FATAL] ${err.message}`);
     process.exit(1);
@@ -57,6 +59,11 @@ const db = getFirestore(firebaseApp);
 const authAdmin = getAuth(firebaseApp);
 
 // =========================================================================
+// Instantiate Distributed Code Store (Milestone 1.1 Constructor Injection)
+// =========================================================================
+const codeStore = new FirestoreAuthorizationCodeStore(db);
+
+// =========================================================================
 // Instantiate Modular Express Application via Shared Factory
 // =========================================================================
 const {
@@ -68,7 +75,8 @@ const {
 } = createApp({
     config,
     db,
-    authAdmin
+    authAdmin,
+    stores: { codeStore }
 });
 
 const PORT = process.env.PORT || 4001;

@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const { getClient } = require('../clients');
 const { createMfaSignedToken, verifyMfaSignedToken } = require('../mfaService');
 const { oauthAuthorizeLimiter, oauthExchangeLimiter } = require('../middleware/rateLimiter');
+const { hashAuthorizationCode, generateRefreshToken } = require('../store');
 
 function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdmin, reconcileCustomerAccount }) {
   const router = express.Router();
@@ -98,13 +99,14 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
         }
       }
 
-      // Remediation for Finding C: Persist negotiated PKCE code challenge method in code record
+      // Persist negotiated PKCE code challenge method in code record
       const code = await codeStore.createCode({
         uid,
         clientId: client_id,
         redirectUri: redirect_uri,
         codeChallenge: code_challenge,
         codeChallengeMethod: code_challenge_method,
+        tenantId: 'lanzar',
         mfaVerified: isAdmin || hasMfa
       });
 
@@ -118,62 +120,279 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
   router.post('/exchange', oauthExchangeLimiter, async (req, res) => {
     try {
       const { code, client_id, redirect_uri, code_verifier } = req.body;
+      const idempotencyKey = req.headers['idempotency-key'] || req.body.idempotency_key;
+
       if (!code || !client_id || !redirect_uri || !code_verifier) {
-        return res.status(400).json({ error: 'invalid_request' });
+        return res.status(400).json({ error: 'invalid_request', error_description: 'Missing required exchange parameters' });
       }
 
-      const record = await codeStore.getCode(code);
-      if (!record || record.used || Date.now() > record.expiresAt) {
-        return res.status(400).json({ error: 'invalid_grant', error_description: 'Code invalid or expired.' });
-      }
-
-      const reqRedirect = redirect_uri.replace(/\/+$/, '');
-      const recRedirect = record.redirectUri.replace(/\/+$/, '');
-      if (record.clientId !== client_id || reqRedirect !== recRedirect) {
-        return res.status(400).json({ error: 'invalid_grant', error_description: 'Client or redirect URI mismatch.' });
-      }
-
-      // Remediation for Finding C: Enforce validated challenge method and prevent downgrade
-      if (!record.codeChallengeMethod || record.codeChallengeMethod !== 'S256') {
-        return res.status(400).json({
-          error: 'invalid_grant',
-          error_description: 'Unsupported or mismatched PKCE challenge method.'
+      // Mandatory capability enforcement for distributed two-phase redemption (Milestone 1.1)
+      // Fail closed immediately if any required distributed store capability is unavailable.
+      if (
+        typeof codeStore.initiateRedemption !== 'function' ||
+        typeof codeStore.registerStagedRecords !== 'function' ||
+        typeof codeStore.finalizeRedemption !== 'function'
+      ) {
+        console.error('[SECURITY ERROR] Distributed codeStore capabilities incomplete or unavailable');
+        return res.status(500).json({
+          error: 'server_error',
+          error_description: 'Distributed redemption store capabilities are incomplete or unavailable.'
         });
       }
 
-      const hash = crypto.createHash('sha256').update(code_verifier).digest('base64url');
-      if (hash !== record.codeChallenge) {
-        return res.status(400).json({ error: 'invalid_grant', error_description: 'PKCE challenge mismatch.' });
+      if (!idempotencyKey) {
+        return res.status(400).json({
+          error: 'invalid_request',
+          error_description: 'Missing mandatory Idempotency-Key header.'
+        });
       }
 
-      // Atomic single-use code consumption
-      const marked = await codeStore.markUsed(code);
-      if (!marked) {
-        return res.status(400).json({ error: 'invalid_grant', error_description: 'Code invalid or expired.' });
-      }
-
-      // Create individual active session in Firestore
-      const sessionRecord = await sessionService.createSession({
-        uid: record.uid,
+      const claim = await codeStore.initiateRedemption({
+        code,
         clientId: client_id,
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent']
+        redirectUri: redirect_uri,
+        codeVerifier: code_verifier,
+        idempotencyKey
       });
 
-      // Mint custom token with session claims
-      const customToken = await authAdmin.createCustomToken(record.uid, {
-        session_id: sessionRecord.sessionId,
-        tenant_id: 'lanzar',
-        client_id
-      });
+      if (claim.status === 'INVALID_REQUEST') {
+        return res.status(400).json({ error: 'invalid_request', error_description: claim.errorDescription });
+      }
+      if (claim.status === 'CLIENT_MISMATCH' || claim.status === 'REDIRECT_MISMATCH' || claim.status === 'PKCE_MISMATCH' || claim.status === 'NOT_FOUND' || claim.status === 'EXPIRED') {
+        return res.status(400).json({ error: 'invalid_grant', error_description: claim.errorDescription });
+      }
+      if (claim.status === 'REPLAY_DETECTED') {
+        return res.status(400).json({ error: 'invalid_grant', error_description: claim.errorDescription || 'Replay detected or ceremony compromised.' });
+      }
+      if (claim.status === 'IN_PROGRESS') {
+        return res.status(409).json({ error: 'redemption_in_progress', error_description: 'Redemption in progress; please wait and retry.' });
+      }
+      if (claim.status === 'IDEMPOTENT_RECOVERY') {
+        return res.json(claim.tokenReceipt);
+      }
 
-      return res.json({
-        custom_token: customToken,
-        session_id: sessionRecord.sessionId,
-        expires_in: 3600
-      });
+      if (claim.status !== 'SUCCESS') {
+        return res.status(400).json({ error: 'invalid_grant', error_description: claim.errorDescription || 'Redemption claim failed.' });
+      }
+
+      const { codeHash, redemptionLockId, fenceToken, record } = claim;
+      const sessionId = `sess_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
+      const familyId = `fam_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
+      const tenantId = record.tenantId || 'lanzar';
+      const uid = record.uid;
+
+      // Safe failure cleanup: Always inspect known sessionId and familyId to handle ambiguous Firestore create outcomes
+      const safeCleanup = async (reason) => {
+        if (typeof codeStore.handleRedemptionFailure === 'function') {
+          try {
+            await codeStore.handleRedemptionFailure({
+              codeHash,
+              redemptionLockId,
+              fenceToken,
+              uid,
+              tenantId,
+              sessionId,
+              familyId,
+              errorReason: reason
+            });
+          } catch (cleanupErr) {
+            console.error('[CLEANUP ERROR] Failed to clean up redemption failure:', cleanupErr.message);
+          }
+        }
+      };
+
+      try {
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const sessionData = {
+          sessionId,
+          familyId,
+          uid,
+          tenantId,
+          clientId: client_id,
+          ceremonyId: record.ceremonyId,
+          status: 'pending_activation',
+          redemptionLockId,
+          fenceToken,
+          deviceName: 'Web Client',
+          browser: req.headers['user-agent'] ? String(req.headers['user-agent']).slice(0, 150) : 'Unknown Browser',
+          ipAddress: req.ip || 'unknown',
+          createdAt: now.toISOString(),
+          lastSeenAt: now.toISOString(),
+          expiresAt: expiresAt.toISOString(),
+          revoked: false
+        };
+
+        const initialRefreshToken = generateRefreshToken(familyId, 1);
+        const initialRefreshTokenHash = hashAuthorizationCode(initialRefreshToken);
+        const familyData = {
+          familyId,
+          sessionId,
+          uid,
+          tenantId,
+          clientId: client_id,
+          ceremonyId: record.ceremonyId,
+          status: 'pending_activation',
+          redemptionLockId,
+          fenceToken,
+          currentActiveTokenHash: initialRefreshTokenHash,
+          sequenceNumber: 1,
+          rotatedTokenHashes: [],
+          expiresAt: expiresAt.toISOString(),
+          createdAt: now.toISOString(),
+          revoked: false
+        };
+
+        const sessionRef = db.collection('users').doc(uid).collection('sessions').doc(sessionId);
+        const familyRef = db.collection('tenants').doc(tenantId).collection('token_families').doc(familyId);
+
+        // 1. Mandatory create-only capability guard (Fail closed if unavailable)
+        if (typeof sessionRef.create !== 'function' || typeof familyRef.create !== 'function') {
+          console.error('[SECURITY ERROR] Firestore create-only capability is unavailable');
+          await safeCleanup('missing_create_capability');
+          return res.status(500).json({
+            error: 'server_error',
+            error_description: 'Firestore create-only capability is required for distributed staging.'
+          });
+        }
+
+        // Stage pending session in Firestore using create-only semantics
+        await sessionRef.create(sessionData);
+
+        // Stage pending token family in Firestore using create-only semantics
+        await familyRef.create(familyData);
+
+        // 2. Fenced staged records pointer registration
+        const regResult = await codeStore.registerStagedRecords({
+          codeHash,
+          redemptionLockId,
+          fenceToken,
+          uid,
+          tenantId,
+          clientId: client_id,
+          ceremonyId: record.ceremonyId,
+          issuedSessionId: sessionId,
+          issuedFamilyId: familyId
+        });
+
+        if (!regResult.success) {
+          await safeCleanup(`staged_registration_failed_${regResult.reason}`);
+          return res.status(400).json({
+            error: 'invalid_grant',
+            error_description: `Redemption registration failed: ${regResult.reason}`
+          });
+        }
+
+        // 3. Mint Firebase Auth custom token
+        const customToken = await authAdmin.createCustomToken(uid, {
+          session_id: sessionId,
+          tenant_id: tenantId,
+          client_id
+        });
+
+        const tokensPayload = {
+          custom_token: customToken,
+          refresh_token: initialRefreshToken,
+          family_id: familyId,
+          session_id: sessionId,
+          expires_in: 3600
+        };
+
+        // 4. Finalize redemption atomically
+        const finalResult = await codeStore.finalizeRedemption({
+          codeHash,
+          redemptionLockId,
+          fenceToken,
+          uid,
+          tenantId,
+          issuedSessionId: sessionId,
+          issuedFamilyId: familyId,
+          rawTokensPayload: tokensPayload
+        });
+
+        if (!finalResult.success) {
+          await safeCleanup(`finalization_failed_${finalResult.reason}`);
+          return res.status(400).json({
+            error: 'invalid_grant',
+            error_description: `Redemption finalization failed: ${finalResult.reason}`
+          });
+        }
+
+        return res.json(tokensPayload);
+      } catch (innerErr) {
+        console.error('[MINT/FINALIZATION ERROR] Triggering failure cleanup:', innerErr.message);
+        await safeCleanup(innerErr.message);
+        return res.status(500).json({ error: 'server_error', error_description: 'Token processing failed.' });
+      }
     } catch (error) {
       console.error('[EXCHANGE ERROR]', error);
+      return res.status(500).json({ error: 'server_error', error_description: error.message });
+    }
+  });
+
+  /**
+   * POST /token
+   * Authoritative OAuth 2.0 Refresh Token Endpoint (grant_type=refresh_token).
+   * Enforces codeStore.authorizeRefreshGrant() before issuing any access token or
+   * rotated refresh token, failing closed if the capability or ceremony state is invalid.
+   */
+  router.post('/token', oauthExchangeLimiter, async (req, res) => {
+    try {
+      const { grant_type, refresh_token, family_id, session_id, uid, tenant_id } = req.body || {};
+      if (grant_type !== 'refresh_token') {
+        return res.status(400).json({
+          error: 'unsupported_grant_type',
+          error_description: 'Only grant_type=refresh_token is supported on /token.'
+        });
+      }
+      if (
+        typeof refresh_token !== 'string' || !refresh_token ||
+        typeof family_id !== 'string' || !family_id ||
+        typeof session_id !== 'string' || !session_id ||
+        typeof uid !== 'string' || !uid
+      ) {
+        return res.status(400).json({
+          error: 'invalid_request',
+          error_description: 'Missing required refresh_token parameters.'
+        });
+      }
+      if (!codeStore || typeof codeStore.authorizeRefreshGrant !== 'function') {
+        console.error('[SECURITY ERROR] Distributed codeStore refresh capability unavailable');
+        return res.status(500).json({
+          error: 'server_error',
+          error_description: 'Distributed refresh authorization capability unavailable.'
+        });
+      }
+
+      const tenantId = (typeof tenant_id === 'string' && tenant_id) ? tenant_id : 'lanzar';
+      const authResult = await codeStore.authorizeRefreshGrant({
+        tenantId,
+        familyId: family_id,
+        uid,
+        sessionId: session_id,
+        refreshToken: refresh_token
+      });
+
+      if (!authResult || authResult.allowed !== true) {
+        return res.status(401).json({
+          error: 'invalid_grant',
+          error_description: 'Refresh token grant denied.',
+          reason: authResult ? authResult.reason : 'AUTHORIZATION_DENIED',
+          ...(authResult && authResult.replayDetected ? { replay_detected: true } : {})
+        });
+      }
+
+      return res.status(200).json({
+        access_token: authResult.accessToken,
+        token_type: 'Bearer',
+        expires_in: 3600,
+        refresh_token: authResult.refreshToken,
+        family_id: authResult.familyId,
+        session_id: authResult.sessionId,
+        sequence_number: authResult.sequenceNumber
+      });
+    } catch (error) {
+      console.error('[TOKEN REFRESH ERROR]', error);
       return res.status(500).json({ error: 'server_error', error_description: error.message });
     }
   });

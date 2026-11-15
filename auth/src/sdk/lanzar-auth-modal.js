@@ -191,14 +191,24 @@ async function exchangeCodeForSession(options = {}, config = STAGING_CONFIG) {
   }
 
   const apiBase = options.authApiBase || config.authApiBase;
+  const idempotencyKey = options.idempotencyKey || (
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? 'idem_' + crypto.randomUUID().replace(/-/g, '')
+      : 'idem_' + Math.random().toString(36).slice(2) + Date.now().toString(36)
+  );
+
   const res = await fetch(`${apiBase}/exchange`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey
+    },
     body: JSON.stringify({
       code,
       client_id: clientId,
       redirect_uri: redirectUri,
-      code_verifier: codeVerifier
+      code_verifier: codeVerifier,
+      idempotency_key: idempotencyKey
     })
   });
 

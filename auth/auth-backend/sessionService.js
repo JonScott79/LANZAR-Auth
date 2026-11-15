@@ -176,8 +176,10 @@ class SessionService {
             let reason = 'active';
             const expMs = this.parseExpiresAtMs(data.expiresAt);
             const nowMs = Date.now();
-            if (data.revoked === true) {
+            if (data.revoked === true || data.status === 'revoked') {
                 reason = 'revoked';
+            } else if (data.status === 'pending_activation') {
+                reason = 'pending_activation';
             } else if (expMs !== null && expMs < nowMs) {
                 reason = 'expired';
             } else if (data.centralSessionId) {
