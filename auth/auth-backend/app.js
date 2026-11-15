@@ -16,11 +16,13 @@ const { ProfileService } = require('./profileService');
 const { SMSService } = require('./smsService');
 const { AuthorizationCodeStore, FirestoreAuthorizationCodeStore } = require('./store');
 const { SigningKeystore } = require('./services/signingKeystore');
+const { OidcTokenService } = require('./services/oidcTokenService');
 
 const { createAccountRouter } = require('./routes/accountRoutes');
 const { createMfaRouter } = require('./routes/mfaRoutes');
 const { createOAuthRouter } = require('./routes/oauthRoutes');
 const { createJwksRouter } = require('./routes/jwksRoutes');
+const { createOidcRouter } = require('./routes/oidcRoutes');
 const { createProfileRouter } = require('./routes/profileRoutes');
 const { createDeviceSessionRouter } = require('./routes/deviceSessionRoutes');
 const { createPhoneRouter } = require('./routes/phoneRoutes');
@@ -94,18 +96,28 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
   });
   app.use('/mfa', mfaRouter);
 
+  const oidcTokenService = services.oidcTokenService || (
+    signingKeystore
+      ? new OidcTokenService({ signingKeystore, issuer: config ? config.apiBaseUrl : undefined })
+      : null
+  );
+
   const oauthRouter = createOAuthRouter({
     db,
     authAdmin,
     codeStore,
     sessionService,
     isUserAdmin: authMiddleware.isUserAdmin,
-    reconcileCustomerAccount
+    reconcileCustomerAccount,
+    oidcTokenService
   });
   app.use('/', oauthRouter);
 
   const jwksRouter = createJwksRouter({ signingKeystore });
   app.use('/', jwksRouter);
+
+  const oidcRouter = createOidcRouter({ oidcTokenService, db });
+  app.use('/', oidcRouter);
 
   const profileRouter = createProfileRouter({
     profileService,

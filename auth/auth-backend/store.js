@@ -624,6 +624,7 @@ class FirestoreAuthorizationCodeStore {
             authSessionId: data.authSessionId || null,
             scope: data.scope || 'openid profile email',
             nonce: data.nonce || null,
+            userClaims: data.userClaims || null,
             mfaVerified: !!data.mfaVerified,
             createdAt: new Date(opTime),
             expiresAt: expiresAt,
@@ -1141,6 +1142,7 @@ class FirestoreAuthorizationCodeStore {
                             authSessionId: data.authSessionId,
                             scope: data.scope,
                             nonce: data.nonce,
+                            userClaims: data.userClaims || null,
                             mfaVerified: data.mfaVerified
                         }
                     };
@@ -1200,6 +1202,7 @@ class FirestoreAuthorizationCodeStore {
                     authSessionId: data.authSessionId,
                     scope: data.scope,
                     nonce: data.nonce,
+                    userClaims: data.userClaims || null,
                     mfaVerified: data.mfaVerified
                 }
             };
@@ -1774,7 +1777,7 @@ class FirestoreAuthorizationCodeStore {
      * 6. On valid active token, atomically rotates currentActiveTokenHash, sequenceNumber, and rotatedTokenHashes
      *    in the same transaction before returning the new access token and rotated refresh token.
      */
-    async authorizeRefreshGrant({ tenantId, familyId, uid, sessionId, refreshToken }) {
+    async authorizeRefreshGrant({ tenantId, familyId, uid, sessionId, refreshToken, clientId }) {
         if (
             typeof tenantId !== 'string' || !tenantId ||
             typeof familyId !== 'string' || !familyId ||
@@ -1820,7 +1823,8 @@ class FirestoreAuthorizationCodeStore {
                 familyData.tenantId !== tenantId ||
                 sessionData.tenantId !== tenantId ||
                 familyData.sessionId !== sessionId ||
-                sessionData.familyId !== familyId
+                sessionData.familyId !== familyId ||
+                (clientId !== undefined && familyData.clientId && familyData.clientId !== clientId)
             ) {
                 return { allowed: false, reason: 'RELATIONSHIP_MISMATCH' };
             }
@@ -1936,6 +1940,11 @@ class FirestoreAuthorizationCodeStore {
                 allowed: true,
                 accessToken: 'lanzar_at_' + crypto.randomBytes(16).toString('hex'),
                 refreshToken: nextRefreshToken,
+                uid,
+                tenantId,
+                clientId: familyData.clientId || null,
+                scope: familyData.scope || 'openid profile email',
+                authTime: familyData.authTime || null,
                 familyId,
                 sessionId,
                 ceremonyId: familyData.ceremonyId,

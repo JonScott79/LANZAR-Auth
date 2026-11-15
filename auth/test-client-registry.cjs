@@ -59,23 +59,19 @@ test('REG-05: Legacy client "id" (id.lanzar.me) is completely removed from regis
   assert(getClient('id') === null, 'getClient("id") must return null');
 });
 
-test('REG-06: Approved client "pythos" (pythos.lanzar.me) is registered and enabled', () => {
-  const client = getClient('pythos');
-  assert(client !== null, 'pythos client must exist');
-  assert(client.enabled === true, 'pythos client must be enabled');
-  assert(client.redirectUris.includes('https://pythos.lanzar.me'), 'pythos redirect URI must be present');
+test('REG-06: Prospective client "pythos" is NOT registered or active', () => {
+  assert.strictEqual(clients['pythos'], undefined, 'pythos must not be in clients');
+  assert.strictEqual(getClient('pythos'), null, 'getClient("pythos") must return null');
 });
 
-test('REG-07: Approved client "mothership" (lanzar.me) is registered and enabled', () => {
-  const client = getClient('mothership');
-  assert(client !== null, 'mothership client must exist');
-  assert(client.enabled === true, 'mothership client must be enabled');
-  assert(client.redirectUris.includes('https://lanzar.me'), 'mothership redirect URI must be present');
+test('REG-07: Prospective client "mothership" is NOT registered or active', () => {
+  assert.strictEqual(clients['mothership'], undefined, 'mothership must not be in clients');
+  assert.strictEqual(getClient('mothership'), null, 'getClient("mothership") must return null');
 });
 
-test('REG-08: Registry strictly contains exactly 6 approved ecosystem clients', () => {
+test('REG-08: Registry strictly contains exactly 4 approved ecosystem clients', () => {
   const registeredKeys = Object.keys(clients).sort();
-  const expectedKeys = ['ai', 'mothership', 'portal', 'pythos', 'threadline', 'tickets'].sort();
+  const expectedKeys = ['ai', 'portal', 'threadline', 'tickets'].sort();
   assert.deepStrictEqual(registeredKeys, expectedKeys, `Expected registry keys to be strictly [${expectedKeys.join(', ')}], got [${registeredKeys.join(', ')}]`);
 });
 

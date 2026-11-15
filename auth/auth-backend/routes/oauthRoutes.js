@@ -8,12 +8,15 @@ const { createMfaSignedToken, verifyMfaSignedToken } = require('../mfaService');
 const { oauthAuthorizeLimiter, oauthExchangeLimiter } = require('../middleware/rateLimiter');
 const { hashAuthorizationCode, generateRefreshToken } = require('../store');
 
-function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdmin, reconcileCustomerAccount }) {
+const { ACCESS_TOKEN_TTL_SECONDS, hasScope, normalizeScope } = require('../services/oidcTokenService');
+
+function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdmin, reconcileCustomerAccount, oidcTokenService, getClientOverride }) {
   const router = express.Router();
+  const resolveClient = (id) => (typeof getClientOverride === 'function' ? getClientOverride(id) : null) || getClient(id);
 
   router.post('/authorize', oauthAuthorizeLimiter, async (req, res) => {
     try {
-      const { idToken, client_id, redirect_uri, state, code_challenge, code_challenge_method, mfa_proof } = req.body;
+      const { idToken, client_id, redirect_uri, state, code_challenge, code_challenge_method, mfa_proof, scope, nonce } = req.body;
       if (!idToken || !client_id || !redirect_uri || !state || !code_challenge) {
         return res.status(400).json({ error: 'invalid_request', error_description: 'Missing or invalid parameters' });
       }
@@ -33,18 +36,18 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
         });
       }
 
-      const client = getClient(client_id);
+      const client = resolveClient(client_id);
       if (!client || !client.enabled) {
         return res.status(400).json({ error: 'invalid_client', error_description: 'Unknown or disabled client' });
       }
 
-      const normalizedRedirect = redirect_uri.replace(/\/+$/, '');
-      const isAuthorized = client.redirectUris.some(uri => {
-        const clean = uri.replace(/\/+$/, '');
-        return clean === normalizedRedirect || normalizedRedirect.startsWith(clean + '/');
-      });
+      const isAuthorized = Array.isArray(client.redirectUris) && client.redirectUris.includes(redirect_uri);
       if (!isAuthorized) {
         return res.status(400).json({ error: 'invalid_request', error_description: 'Unauthorized redirect URI' });
+      }
+
+      if (nonce !== undefined && (typeof nonce !== 'string' || nonce.length === 0 || nonce.length > 256)) {
+        return res.status(400).json({ error: 'invalid_request', error_description: 'Invalid nonce parameter' });
       }
 
       const decodedToken = await authAdmin.verifyIdToken(idToken, true);
@@ -107,6 +110,14 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
         codeChallenge: code_challenge,
         codeChallengeMethod: code_challenge_method,
         tenantId: 'lanzar',
+        scope: typeof scope === 'string' && scope.trim() ? normalizeScope(scope) : 'openid profile email',
+        nonce: typeof nonce === 'string' && nonce ? nonce : null,
+        userClaims: {
+          email: decodedToken.email,
+          emailVerified: decodedToken.email_verified,
+          name: decodedToken.name,
+          authTime: decodedToken.auth_time
+        },
         mfaVerified: isAdmin || hasMfa
       });
 
@@ -117,10 +128,10 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
     }
   });
 
-  router.post('/exchange', oauthExchangeLimiter, async (req, res) => {
+  async function handleAuthorizationCodeGrant(req, res) {
     try {
-      const { code, client_id, redirect_uri, code_verifier } = req.body;
-      const idempotencyKey = req.headers['idempotency-key'] || req.body.idempotency_key;
+      const { code, client_id, redirect_uri, code_verifier } = req.body || {};
+      const idempotencyKey = req.headers['idempotency-key'] || (req.body && req.body.idempotency_key);
 
       if (!code || !client_id || !redirect_uri || !code_verifier) {
         return res.status(400).json({ error: 'invalid_request', error_description: 'Missing required exchange parameters' });
@@ -238,6 +249,8 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
           currentActiveTokenHash: initialRefreshTokenHash,
           sequenceNumber: 1,
           rotatedTokenHashes: [],
+          scope: record.scope || 'openid profile email',
+          authTime: (record.userClaims && Number.isInteger(record.userClaims.authTime)) ? record.userClaims.authTime : null,
           expiresAt: expiresAt.toISOString(),
           createdAt: now.toISOString(),
           revoked: false
@@ -283,20 +296,39 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
           });
         }
 
-        // 3. Mint Firebase Auth custom token
-        const customToken = await authAdmin.createCustomToken(uid, {
-          session_id: sessionId,
-          tenant_id: tenantId,
-          client_id
-        });
+        // 3. Mint tokens via Scoped Compatibility Adapter (OIDC RS256 / Dual / Legacy Firebase)
+        let tokensPayload;
+        if (oidcTokenService && typeof oidcTokenService.buildTokenResponse === 'function') {
+          const client = resolveClient(client_id);
+          tokensPayload = await oidcTokenService.buildTokenResponse({
+            client,
+            uid,
+            clientId: client_id,
+            tenantId,
+            sessionId,
+            familyId,
+            refreshToken: initialRefreshToken,
+            scope: record.scope || 'openid profile email',
+            userClaims: record.userClaims || {},
+            nonce: record.nonce,
+            authTime: record.userClaims ? record.userClaims.authTime : undefined,
+            authAdmin
+          });
+        } else {
+          const customToken = await authAdmin.createCustomToken(uid, {
+            session_id: sessionId,
+            tenant_id: tenantId,
+            client_id
+          });
 
-        const tokensPayload = {
-          custom_token: customToken,
-          refresh_token: initialRefreshToken,
-          family_id: familyId,
-          session_id: sessionId,
-          expires_in: 3600
-        };
+          tokensPayload = {
+            custom_token: customToken,
+            refresh_token: initialRefreshToken,
+            family_id: familyId,
+            session_id: sessionId,
+            expires_in: 3600
+          };
+        }
 
         // 4. Finalize redemption atomically
         const finalResult = await codeStore.finalizeRedemption({
@@ -328,21 +360,26 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
       console.error('[EXCHANGE ERROR]', error);
       return res.status(500).json({ error: 'server_error', error_description: error.message });
     }
-  });
+  }
+
+  router.post('/exchange', oauthExchangeLimiter, handleAuthorizationCodeGrant);
 
   /**
    * POST /token
-   * Authoritative OAuth 2.0 Refresh Token Endpoint (grant_type=refresh_token).
-   * Enforces codeStore.authorizeRefreshGrant() before issuing any access token or
-   * rotated refresh token, failing closed if the capability or ceremony state is invalid.
+   * Standards-Compliant OAuth 2.0 / OIDC Token Endpoint:
+   * - grant_type=authorization_code: delegates to atomic two-phase code redemption & OIDC/compatibility adapter
+   * - grant_type=refresh_token: enforces codeStore.authorizeRefreshGrant() before issuing rotated RS256/refresh tokens
    */
   router.post('/token', oauthExchangeLimiter, async (req, res) => {
     try {
       const { grant_type, refresh_token, family_id, session_id, uid, tenant_id } = req.body || {};
+      if (grant_type === 'authorization_code') {
+        return handleAuthorizationCodeGrant(req, res);
+      }
       if (grant_type !== 'refresh_token') {
         return res.status(400).json({
           error: 'unsupported_grant_type',
-          error_description: 'Only grant_type=refresh_token is supported on /token.'
+          error_description: 'Only grant_type=authorization_code and grant_type=refresh_token are supported on /token.'
         });
       }
       if (
@@ -370,7 +407,8 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
         familyId: family_id,
         uid,
         sessionId: session_id,
-        refreshToken: refresh_token
+        refreshToken: refresh_token,
+        ...(req.body && req.body.client_id !== undefined ? { clientId: req.body.client_id } : {})
       });
 
       if (!authResult || authResult.allowed !== true) {
@@ -380,6 +418,56 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
           reason: authResult ? authResult.reason : 'AUTHORIZATION_DENIED',
           ...(authResult && authResult.replayDetected ? { replay_detected: true } : {})
         });
+      }
+
+      if (req.body && req.body.client_id !== undefined && authResult.clientId && req.body.client_id !== authResult.clientId) {
+        return res.status(400).json({
+          error: 'invalid_grant',
+          error_description: 'Client identifier does not match token family.'
+        });
+      }
+
+      if (oidcTokenService && typeof oidcTokenService.mintAccessToken === 'function') {
+        const grantedScope = normalizeScope(authResult.scope);
+        const clientId = authResult.clientId || 'lanzar_client';
+        const boundClient = authResult.clientId ? resolveClient(authResult.clientId) : null;
+        const mode = (boundClient && boundClient.compatibilityMode) ? boundClient.compatibilityMode : 'legacy_firebase';
+
+        const responseBody = {
+          refresh_token: authResult.refreshToken,
+          family_id: authResult.familyId,
+          session_id: authResult.sessionId,
+          sequence_number: authResult.sequenceNumber
+        };
+
+        if (mode === 'dual' || mode === 'oidc') {
+          responseBody.access_token = await oidcTokenService.mintAccessToken({
+            uid: authResult.uid || uid,
+            clientId,
+            tenantId: authResult.tenantId || tenantId,
+            sessionId: authResult.sessionId,
+            familyId: authResult.familyId,
+            scope: grantedScope
+          });
+          responseBody.token_type = 'Bearer';
+          responseBody.expires_in = ACCESS_TOKEN_TTL_SECONDS;
+          responseBody.scope = grantedScope;
+          if (hasScope(grantedScope, 'openid') && typeof oidcTokenService.mintIdToken === 'function') {
+            responseBody.id_token = await oidcTokenService.mintIdToken({
+              uid: authResult.uid || uid,
+              clientId,
+              tenantId: authResult.tenantId || tenantId,
+              sessionId: authResult.sessionId,
+              scope: grantedScope,
+              authTime: authResult.authTime
+            });
+          }
+        } else {
+          responseBody.access_token = authResult.accessToken;
+          responseBody.token_type = 'Bearer';
+          responseBody.expires_in = 3600;
+        }
+        return res.status(200).json(responseBody);
       }
 
       return res.status(200).json({

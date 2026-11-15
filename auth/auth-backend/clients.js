@@ -1,6 +1,6 @@
 // clients.js
 // Authorized OAuth 2.0 / PKCE client registry for LANZAR ecosystem
-// Approved clients: portal, tickets, threadline, ai, pythos, mothership (LID-ARCH-REV-015 / Phase E.1)
+// Approved internal clients: portal, tickets, threadline, ai (Pythos & Mothership prospective only, unapproved)
 
 const { resolveEnvironment } = require('./config/environments');
 
@@ -26,6 +26,7 @@ const clients = {
             'https://portal.lanzar.me',
             'https://portal.lanzar.me/'
         ],
+        compatibilityMode: 'legacy_firebase',
         enabled: true
     },
     'tickets': {
@@ -41,6 +42,7 @@ const clients = {
             'https://tickets.lanzar.me',
             'https://tickets.lanzar.me/'
         ],
+        compatibilityMode: 'legacy_firebase',
         enabled: true
     },
     'threadline': {
@@ -54,6 +56,7 @@ const clients = {
             'https://threadline-production-1c28.up.railway.app',
             'https://threadline-production-1c28.up.railway.app/'
         ],
+        compatibilityMode: 'dual',
         enabled: true
     },
     'ai': {
@@ -69,36 +72,7 @@ const clients = {
             'https://ai.lanzar.me',
             'https://ai.lanzar.me/'
         ],
-        enabled: true
-    },
-    'pythos': {
-        id: 'pythos',
-        name: 'Pythos AI Autonomous Tutor',
-        redirectUris: [
-            'http://localhost:3005',
-            'http://localhost:3005/',
-            'http://localhost:5177',
-            'http://localhost:5177/',
-            'https://pythos-dev.lanzar.me',
-            'https://pythos-dev.lanzar.me/',
-            'https://pythos.lanzar.me',
-            'https://pythos.lanzar.me/'
-        ],
-        enabled: true
-    },
-    'mothership': {
-        id: 'mothership',
-        name: 'LANZAR Mothership Gateway',
-        redirectUris: [
-            'http://localhost:5178',
-            'http://localhost:5178/',
-            'http://localhost:8888',
-            'http://localhost:8888/',
-            'https://lanzar.me',
-            'https://lanzar.me/',
-            'https://www.lanzar.me',
-            'https://www.lanzar.me/'
-        ],
+        compatibilityMode: 'legacy_firebase',
         enabled: true
     }
 };
