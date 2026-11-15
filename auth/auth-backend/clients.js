@@ -91,4 +91,4 @@ function getClient(clientId) {
     return client;
 }
 
-module.exports = { getClient, clients };
+module.exports = { getClient, clients, checkIsProduction };

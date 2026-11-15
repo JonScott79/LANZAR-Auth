@@ -1,0 +1,353 @@
+// clientRegistryService.js
+// Milestone 1.4: Dynamic Database-Backed OAuth Client Registry & Exact Whitelists
+// Collections:
+//   - /tenants/{tenantId}/clients/{clientId}
+//   - /clients_index/{clientId}
+
+const crypto = require('crypto');
+const net = require('net');
+const { clients: staticApprovedClients, getClient: getStaticClient, checkIsProduction } = require('../clients');
+const { VALID_COMPATIBILITY_MODES } = require('./oidcTokenService');
+
+const CLIENT_ID_REGEX = /^[a-z0-9][a-z0-9_-]{1,63}$/;
+const TENANT_ID_REGEX = /^[a-z0-9][a-z0-9_-]{1,63}$/;
+const VALID_AUTH_METHODS = new Set(['none', 'client_secret_post']);
+
+function hashClientSecret(secret) {
+    return crypto.createHash('sha256').update(String(secret), 'utf8').digest('hex');
+}
+
+function timingSafeEqualHex(a, b) {
+    if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length || a.length === 0) {
+        return false;
+    }
+    try {
+        return crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
+    } catch (_) {
+        return false;
+    }
+}
+
+function validateRedirectUris(redirectUris) {
+    if (!Array.isArray(redirectUris) || redirectUris.length === 0) {
+        throw new Error('redirectUris must be a non-empty array of exact URIs.');
+    }
+    const normalized = [];
+    for (const uri of redirectUris) {
+        if (typeof uri !== 'string' || !uri) {
+            throw new Error('Each redirectUri must be a non-empty string.');
+        }
+        if (uri.includes('*')) {
+            throw new Error(`Wildcard redirect URIs are strictly forbidden: ${uri}`);
+        }
+        let parsed;
+        try {
+            parsed = new URL(uri);
+        } catch (_) {
+            throw new Error(`Invalid redirect URI: ${uri}`);
+        }
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+            throw new Error(`Unsupported redirect URI protocol: ${uri}`);
+        }
+        if (parsed.hash) {
+            throw new Error(`Redirect URI must not contain a fragment: ${uri}`);
+        }
+        normalized.push(uri);
+    }
+    return Array.from(new Set(normalized));
+}
+
+function isLoopbackOrLocalhostUri(uri) {
+    if (typeof uri !== 'string' || !uri) return true;
+    try {
+        const parsed = new URL(uri);
+        const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase().replace(/\.+$/, '');
+        if (host === 'localhost' || host.endsWith('.localhost')) {
+            return true;
+        }
+        if (host === '::1' || host === '0:0:0:0:0:0:0:1') {
+            return true;
+        }
+        if (net.isIPv4(host) && host.startsWith('127.')) {
+            return true;
+        }
+        if (/^(?:::ffff:|0:0:0:0:0:ffff:)(?:127(?:\.\d{1,3}){3}|7f[0-9a-f]{2}:[0-9a-f]{1,4})$/.test(host)) {
+            return true;
+        }
+        return false;
+    } catch (_) {
+        return true;
+    }
+}
+
+function filterProductionRedirectUris(redirectUris) {
+    if (!Array.isArray(redirectUris)) return [];
+    return redirectUris.filter(uri => !isLoopbackOrLocalhostUri(uri));
+}
+
+function sanitizeClientForPublicRead(client) {
+    if (!client) return null;
+    const { clientSecretHash, clientSecret, ...safe } = client;
+    return safe;
+}
+
+class ClientRegistryService {
+    constructor(db, options = {}) {
+        if (!db || typeof db.collection !== 'function') {
+            throw new Error('ClientRegistryService requires a valid Firestore instance.');
+        }
+        this.db = db;
+        this.isProductionFn = typeof options.isProduction === 'function' ? options.isProduction : checkIsProduction;
+    }
+
+    _tenantClientRef(tenantId, clientId) {
+        return this.db.collection('tenants').doc(tenantId).collection('clients').doc(clientId);
+    }
+
+    _indexRef(clientId) {
+        return this.db.collection('clients_index').doc(clientId);
+    }
+
+    async registerClient({
+        tenantId = 'lanzar',
+        clientId,
+        name,
+        redirectUris,
+        compatibilityMode = 'oidc',
+        tokenEndpointAuthMethod = 'none',
+        clientSecret,
+        enabled = true
+    }) {
+        if (typeof tenantId !== 'string' || !TENANT_ID_REGEX.test(tenantId)) {
+            throw new Error('Invalid tenantId format.');
+        }
+        if (typeof clientId !== 'string' || !CLIENT_ID_REGEX.test(clientId)) {
+            throw new Error('Invalid clientId format (must be 2-64 lowercase alphanumeric, underscore, or hyphen).');
+        }
+        if (typeof name !== 'string' || !name.trim()) {
+            throw new Error('Client name is required.');
+        }
+        if (!VALID_COMPATIBILITY_MODES.has(compatibilityMode)) {
+            throw new Error(`Unsupported compatibilityMode: ${compatibilityMode}`);
+        }
+        if (!VALID_AUTH_METHODS.has(tokenEndpointAuthMethod)) {
+            throw new Error(`Unsupported tokenEndpointAuthMethod: ${tokenEndpointAuthMethod}`);
+        }
+        if (tokenEndpointAuthMethod === 'client_secret_post' && (typeof clientSecret !== 'string' || clientSecret.length < 16)) {
+            throw new Error('Confidential clients (client_secret_post) require a clientSecret of at least 16 characters.');
+        }
+
+        const validatedUris = validateRedirectUris(redirectUris);
+        const nowIso = new Date().toISOString();
+
+        const record = {
+            id: clientId,
+            clientId,
+            tenantId,
+            name: name.trim(),
+            redirectUris: validatedUris,
+            compatibilityMode,
+            tokenEndpointAuthMethod,
+            ...(tokenEndpointAuthMethod === 'client_secret_post' ? { clientSecretHash: hashClientSecret(clientSecret) } : {}),
+            enabled: Boolean(enabled),
+            createdAt: nowIso,
+            updatedAt: nowIso
+        };
+
+        await this.db.runTransaction(async (tx) => {
+            const indexRef = this._indexRef(clientId);
+            const clientRef = this._tenantClientRef(tenantId, clientId);
+            const indexSnap = await tx.get(indexRef);
+            const clientSnap = await tx.get(clientRef);
+
+            if (indexSnap.exists || clientSnap.exists) {
+                throw new Error(`CLIENT_ALREADY_EXISTS: ${clientId}`);
+            }
+
+            tx.set(clientRef, record);
+            tx.set(indexRef, {
+                clientId,
+                tenantId,
+                enabled: record.enabled,
+                updatedAt: nowIso
+            });
+        });
+
+        return sanitizeClientForPublicRead(record);
+    }
+
+    async updateClient({ tenantId = 'lanzar', clientId, patch = {} }) {
+        if (typeof tenantId !== 'string' || !TENANT_ID_REGEX.test(tenantId)) {
+            throw new Error('Invalid tenantId format.');
+        }
+        if (typeof clientId !== 'string' || !CLIENT_ID_REGEX.test(clientId)) {
+            throw new Error('Invalid clientId format.');
+        }
+
+        const updated = await this.db.runTransaction(async (tx) => {
+            const indexRef = this._indexRef(clientId);
+            const clientRef = this._tenantClientRef(tenantId, clientId);
+            const indexSnap = await tx.get(indexRef);
+            const clientSnap = await tx.get(clientRef);
+
+            if (!indexSnap.exists) {
+                throw new Error(`CLIENT_NOT_FOUND: ${clientId}`);
+            }
+            if (indexSnap.data().tenantId !== tenantId) {
+                throw new Error(`TENANT_OWNERSHIP_MISMATCH: ${clientId}`);
+            }
+            if (!clientSnap.exists) {
+                throw new Error(`CLIENT_NOT_FOUND: ${clientId}`);
+            }
+
+            const current = clientSnap.data();
+            const next = { ...current, updatedAt: new Date().toISOString() };
+
+            if (patch.name !== undefined) {
+                if (typeof patch.name !== 'string' || !patch.name.trim()) {
+                    throw new Error('Client name must be a non-empty string.');
+                }
+                next.name = patch.name.trim();
+            }
+            if (patch.redirectUris !== undefined) {
+                next.redirectUris = validateRedirectUris(patch.redirectUris);
+            }
+            if (patch.compatibilityMode !== undefined) {
+                if (!VALID_COMPATIBILITY_MODES.has(patch.compatibilityMode)) {
+                    throw new Error(`Unsupported compatibilityMode: ${patch.compatibilityMode}`);
+                }
+                next.compatibilityMode = patch.compatibilityMode;
+            }
+            if (patch.enabled !== undefined) {
+                next.enabled = Boolean(patch.enabled);
+            }
+
+            tx.set(clientRef, next);
+            tx.set(indexRef, {
+                clientId,
+                tenantId,
+                enabled: next.enabled,
+                updatedAt: next.updatedAt
+            });
+            return next;
+        });
+
+        return sanitizeClientForPublicRead(updated);
+    }
+
+    async resolveClient(clientId, { isProduction } = {}) {
+        if (typeof clientId !== 'string' || !clientId) {
+            return null;
+        }
+        const prodMode = isProduction !== undefined ? Boolean(isProduction) : Boolean(this.isProductionFn());
+
+        const indexSnap = await this._indexRef(clientId).get();
+        if (indexSnap.exists && indexSnap.data() && indexSnap.data().tenantId) {
+            const tenantId = indexSnap.data().tenantId;
+            const clientSnap = await this._tenantClientRef(tenantId, clientId).get();
+            if (!clientSnap.exists) {
+                return null;
+            }
+            const client = clientSnap.data();
+            if (prodMode) {
+                return {
+                    ...client,
+                    redirectUris: filterProductionRedirectUris(client.redirectUris)
+                };
+            }
+            return client;
+        }
+
+        // Fallback to static approved internal clients (`portal`, `tickets`, `threadline`, `ai` only)
+        const staticClient = getStaticClient(clientId);
+        if (!staticClient) {
+            return null;
+        }
+        const fallback = {
+            ...staticClient,
+            clientId: staticClient.id,
+            tenantId: 'lanzar',
+            tokenEndpointAuthMethod: 'none'
+        };
+        if (prodMode) {
+            fallback.redirectUris = filterProductionRedirectUris(fallback.redirectUris);
+        }
+        return fallback;
+    }
+
+    isRedirectUriAuthorized(client, redirectUri) {
+        if (!client || typeof redirectUri !== 'string' || !redirectUri) {
+            return false;
+        }
+        if (redirectUri.includes('*')) {
+            return false;
+        }
+        return Array.isArray(client.redirectUris) && client.redirectUris.includes(redirectUri);
+    }
+
+    verifyClientCredentials(client, presentedSecret) {
+        if (!client) return false;
+        const authMethod = client.tokenEndpointAuthMethod || 'none';
+        if (authMethod === 'client_secret_post') {
+            if (typeof presentedSecret !== 'string' || !presentedSecret || !client.clientSecretHash) {
+                return false;
+            }
+            return timingSafeEqualHex(hashClientSecret(presentedSecret), client.clientSecretHash);
+        }
+        return true;
+    }
+
+    /**
+     * Idempotently seeds ONLY the four approved internal LANZAR clients
+     * (`portal`, `tickets`, `threadline`, `ai`) into `/tenants/lanzar/clients/{clientId}`
+     * and `/clients_index/{clientId}`. Prospective clients remain excluded.
+     */
+    async seedApprovedInternalClients({ tenantId = 'lanzar' } = {}) {
+        const seeded = [];
+        for (const [clientId, cfg] of Object.entries(staticApprovedClients)) {
+            const nowIso = new Date().toISOString();
+            const created = await this.db.runTransaction(async (tx) => {
+                const indexRef = this._indexRef(clientId);
+                const clientRef = this._tenantClientRef(tenantId, clientId);
+                const indexSnap = await tx.get(indexRef);
+                if (indexSnap.exists) {
+                    return false;
+                }
+                const record = {
+                    id: clientId,
+                    clientId,
+                    tenantId,
+                    name: cfg.name,
+                    redirectUris: [...cfg.redirectUris],
+                    compatibilityMode: cfg.compatibilityMode || 'legacy_firebase',
+                    tokenEndpointAuthMethod: 'none',
+                    enabled: Boolean(cfg.enabled),
+                    seeded: true,
+                    createdAt: nowIso,
+                    updatedAt: nowIso
+                };
+                tx.set(clientRef, record);
+                tx.set(indexRef, {
+                    clientId,
+                    tenantId,
+                    enabled: record.enabled,
+                    updatedAt: nowIso
+                });
+                return true;
+            });
+            if (created) {
+                seeded.push(clientId);
+            }
+        }
+        return { seeded };
+    }
+}
+
+module.exports = {
+    ClientRegistryService,
+    validateRedirectUris,
+    hashClientSecret,
+    sanitizeClientForPublicRead,
+    isLoopbackOrLocalhostUri,
+    filterProductionRedirectUris
+};

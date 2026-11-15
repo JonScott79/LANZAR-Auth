@@ -2,13 +2,13 @@
 // Shared Authentication & Authorization Middleware for LANZAR ID
 
 function createAuthMiddleware({ db, authAdmin, sessionService }) {
-  async function isUserAdmin(uid, email) {
-    if (!uid && !email) return false;
+  async function getAdminRecord(uid, email) {
+    if (!uid && !email) return null;
     try {
       if (uid) {
         const adminDoc = await db.collection('admins').doc(uid).get();
         if (adminDoc.exists && adminDoc.data().active === true) {
-          return true;
+          return adminDoc.data();
         }
       }
       if (email) {
@@ -18,14 +18,19 @@ function createAuthMiddleware({ db, authAdmin, sessionService }) {
           .limit(1)
           .get();
         if (!emailQuery.empty) {
-          return true;
+          return emailQuery.docs[0].data();
         }
       }
-      return false;
+      return null;
     } catch (e) {
       console.error('[AUTH ADMIN CHECK ERROR]', e.message);
-      return false;
+      return null;
     }
+  }
+
+  async function isUserAdmin(uid, email) {
+    const record = await getAdminRecord(uid, email);
+    return Boolean(record);
   }
 
   async function authenticateUserMiddleware(req, res, next) {
@@ -108,11 +113,25 @@ function createAuthMiddleware({ db, authAdmin, sessionService }) {
 
   async function authenticateAdminMiddleware(req, res, next) {
     authenticateUserMiddleware(req, res, async () => {
-      const isAdmin = await isUserAdmin(req.uid, req.user.email);
-      if (!isAdmin) {
+      const adminRecord = await getAdminRecord(req.uid, req.user.email);
+      if (!adminRecord) {
         return res.status(403).json({ error: 'forbidden', error_description: 'Administrative access required.' });
       }
+      const isPlatformAdmin = Boolean(
+        adminRecord.platformAdmin === true ||
+        adminRecord.role === 'platform_admin' ||
+        (req.user && (req.user.platformAdmin === true || req.user.role === 'platform_admin'))
+      );
+      const authoritativeTenantId = adminRecord.tenantId !== undefined
+        ? adminRecord.tenantId
+        : (req.user ? req.user.tenantId : undefined);
       req.isAdmin = true;
+      req.adminRole = isPlatformAdmin ? 'platform_admin' : 'tenant_admin';
+      req.adminContext = {
+        uid: req.uid,
+        isPlatformAdmin,
+        tenantId: authoritativeTenantId
+      };
       next();
     });
   }

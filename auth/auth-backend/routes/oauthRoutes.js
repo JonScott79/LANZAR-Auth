@@ -10,9 +10,18 @@ const { hashAuthorizationCode, generateRefreshToken } = require('../store');
 
 const { ACCESS_TOKEN_TTL_SECONDS, hasScope, normalizeScope } = require('../services/oidcTokenService');
 
-function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdmin, reconcileCustomerAccount, oidcTokenService, getClientOverride }) {
+function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdmin, reconcileCustomerAccount, oidcTokenService, clientRegistryService, getClientOverride }) {
   const router = express.Router();
-  const resolveClient = (id) => (typeof getClientOverride === 'function' ? getClientOverride(id) : null) || getClient(id);
+  const resolveClientAsync = async (id) => {
+    if (typeof getClientOverride === 'function') {
+      const overridden = getClientOverride(id);
+      if (overridden) return overridden;
+    }
+    if (clientRegistryService && typeof clientRegistryService.resolveClient === 'function') {
+      return await clientRegistryService.resolveClient(id);
+    }
+    return getClient(id);
+  };
 
   router.post('/authorize', oauthAuthorizeLimiter, async (req, res) => {
     try {
@@ -36,12 +45,14 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
         });
       }
 
-      const client = resolveClient(client_id);
+      const client = await resolveClientAsync(client_id);
       if (!client || !client.enabled) {
         return res.status(400).json({ error: 'invalid_client', error_description: 'Unknown or disabled client' });
       }
 
-      const isAuthorized = Array.isArray(client.redirectUris) && client.redirectUris.includes(redirect_uri);
+      const isAuthorized = clientRegistryService && typeof clientRegistryService.isRedirectUriAuthorized === 'function'
+        ? clientRegistryService.isRedirectUriAuthorized(client, redirect_uri)
+        : (Array.isArray(client.redirectUris) && client.redirectUris.includes(redirect_uri));
       if (!isAuthorized) {
         return res.status(400).json({ error: 'invalid_request', error_description: 'Unauthorized redirect URI' });
       }
@@ -109,7 +120,7 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
         redirectUri: redirect_uri,
         codeChallenge: code_challenge,
         codeChallengeMethod: code_challenge_method,
-        tenantId: 'lanzar',
+        tenantId: client.tenantId || 'lanzar',
         scope: typeof scope === 'string' && scope.trim() ? normalizeScope(scope) : 'openid profile email',
         nonce: typeof nonce === 'string' && nonce ? nonce : null,
         userClaims: {
@@ -135,6 +146,16 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
 
       if (!code || !client_id || !redirect_uri || !code_verifier) {
         return res.status(400).json({ error: 'invalid_request', error_description: 'Missing required exchange parameters' });
+      }
+
+      const resolvedClient = await resolveClientAsync(client_id);
+      if (!resolvedClient || !resolvedClient.enabled) {
+        return res.status(400).json({ error: 'invalid_client', error_description: 'Unknown or disabled client.' });
+      }
+      if (clientRegistryService && typeof clientRegistryService.verifyClientCredentials === 'function') {
+        if (!clientRegistryService.verifyClientCredentials(resolvedClient, req.body && req.body.client_secret)) {
+          return res.status(401).json({ error: 'invalid_client', error_description: 'Invalid client credentials.' });
+        }
       }
 
       // Mandatory capability enforcement for distributed two-phase redemption (Milestone 1.1)
@@ -299,9 +320,8 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
         // 3. Mint tokens via Scoped Compatibility Adapter (OIDC RS256 / Dual / Legacy Firebase)
         let tokensPayload;
         if (oidcTokenService && typeof oidcTokenService.buildTokenResponse === 'function') {
-          const client = resolveClient(client_id);
           tokensPayload = await oidcTokenService.buildTokenResponse({
-            client,
+            client: resolvedClient,
             uid,
             clientId: client_id,
             tenantId,
@@ -402,6 +422,19 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
       }
 
       const tenantId = (typeof tenant_id === 'string' && tenant_id) ? tenant_id : 'lanzar';
+
+      // Pre-authenticate confidential/disabled clients before mutating refresh token family when client_id is supplied
+      if (req.body && req.body.client_id !== undefined && clientRegistryService) {
+        const preClient = await resolveClientAsync(req.body.client_id);
+        if (!preClient || !preClient.enabled) {
+          return res.status(401).json({ error: 'invalid_client', error_description: 'Unknown or disabled client.' });
+        }
+        if (typeof clientRegistryService.verifyClientCredentials === 'function' &&
+            !clientRegistryService.verifyClientCredentials(preClient, req.body.client_secret)) {
+          return res.status(401).json({ error: 'invalid_client', error_description: 'Invalid client credentials.' });
+        }
+      }
+
       const authResult = await codeStore.authorizeRefreshGrant({
         tenantId,
         familyId: family_id,
@@ -427,10 +460,22 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
         });
       }
 
+      const boundClient = authResult.clientId ? await resolveClientAsync(authResult.clientId) : null;
+      if (clientRegistryService && authResult.clientId && !boundClient) {
+        return res.status(401).json({ error: 'invalid_client', error_description: 'Unknown client.' });
+      }
+      if (boundClient && !boundClient.enabled) {
+        return res.status(401).json({ error: 'invalid_client', error_description: 'Client is disabled.' });
+      }
+      if (boundClient && clientRegistryService && typeof clientRegistryService.verifyClientCredentials === 'function') {
+        if (!clientRegistryService.verifyClientCredentials(boundClient, req.body && req.body.client_secret)) {
+          return res.status(401).json({ error: 'invalid_client', error_description: 'Invalid client credentials.' });
+        }
+      }
+
       if (oidcTokenService && typeof oidcTokenService.mintAccessToken === 'function') {
         const grantedScope = normalizeScope(authResult.scope);
         const clientId = authResult.clientId || 'lanzar_client';
-        const boundClient = authResult.clientId ? resolveClient(authResult.clientId) : null;
         const mode = (boundClient && boundClient.compatibilityMode) ? boundClient.compatibilityMode : 'legacy_firebase';
 
         const responseBody = {

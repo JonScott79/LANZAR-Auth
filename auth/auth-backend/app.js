@@ -17,12 +17,14 @@ const { SMSService } = require('./smsService');
 const { AuthorizationCodeStore, FirestoreAuthorizationCodeStore } = require('./store');
 const { SigningKeystore } = require('./services/signingKeystore');
 const { OidcTokenService } = require('./services/oidcTokenService');
+const { ClientRegistryService } = require('./services/clientRegistryService');
 
 const { createAccountRouter } = require('./routes/accountRoutes');
 const { createMfaRouter } = require('./routes/mfaRoutes');
 const { createOAuthRouter } = require('./routes/oauthRoutes');
 const { createJwksRouter } = require('./routes/jwksRoutes');
 const { createOidcRouter } = require('./routes/oidcRoutes');
+const { createClientRegistryRouter } = require('./routes/clientRegistryRoutes');
 const { createProfileRouter } = require('./routes/profileRoutes');
 const { createDeviceSessionRouter } = require('./routes/deviceSessionRoutes');
 const { createPhoneRouter } = require('./routes/phoneRoutes');
@@ -102,6 +104,12 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
       : null
   );
 
+  const clientRegistryService = services.clientRegistryService || (
+    db && typeof db.collection === 'function'
+      ? new ClientRegistryService(db)
+      : null
+  );
+
   const oauthRouter = createOAuthRouter({
     db,
     authAdmin,
@@ -109,9 +117,16 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
     sessionService,
     isUserAdmin: authMiddleware.isUserAdmin,
     reconcileCustomerAccount,
-    oidcTokenService
+    oidcTokenService,
+    clientRegistryService
   });
   app.use('/', oauthRouter);
+
+  const clientRegistryRouter = createClientRegistryRouter({
+    clientRegistryService,
+    authenticateAdminMiddleware: authMiddleware.authenticateAdminMiddleware
+  });
+  app.use('/api/admin/id', clientRegistryRouter);
 
   const jwksRouter = createJwksRouter({ signingKeystore });
   app.use('/', jwksRouter);
