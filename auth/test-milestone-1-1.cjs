@@ -1397,6 +1397,27 @@ async function main() {
             RECEIPT_ENCRYPTION_KEY: validHexKey
         });
         assert(validResult === true, 'Valid 64-char hex key must pass validation in production');
+
+        // Subtest 24E: Reject TOKEN_RECEIPT_KEY fallback across all production and staging combinations
+        const legacyFallbackKey = crypto.randomBytes(32).toString('hex');
+        for (const env of [
+            { NODE_ENV: 'staging', TOKEN_RECEIPT_KEY: legacyFallbackKey },
+            { APP_ENV: 'staging', TOKEN_RECEIPT_KEY: legacyFallbackKey },
+            { NODE_ENV: 'production', TOKEN_RECEIPT_KEY: legacyFallbackKey },
+            { APP_ENV: 'production', TOKEN_RECEIPT_KEY: legacyFallbackKey }
+        ]) {
+            let caughtFallback = false;
+            try {
+                validateReceiptKeyConfiguration(env);
+            } catch (e) {
+                caughtFallback = e.message.includes('RECEIPT_ENCRYPTION_KEY is required');
+            }
+            assert(caughtFallback === true, `Must reject TOKEN_RECEIPT_KEY fallback for ${JSON.stringify(env)}`);
+        }
+        assert(
+            validateReceiptKeyConfiguration({ NODE_ENV: 'development', TOKEN_RECEIPT_KEY: legacyFallbackKey }) === true,
+            'TOKEN_RECEIPT_KEY fallback remains allowed in development'
+        );
     });
 
     // -------------------------------------------------------------

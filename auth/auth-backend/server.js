@@ -17,6 +17,7 @@ const { getFirestore } = require('firebase-admin/firestore');
 const { createApp } = require('./app');
 const { bootstrap } = require('./config/bootstrap');
 const { FirestoreAuthorizationCodeStore, validateReceiptKeyConfiguration } = require('./store');
+const { validateSigningKeyEncryptionConfiguration } = require('./services/signingKeystore');
 
 // =========================================================================
 // Fail-Closed Startup Validation (LID-VER-004 & LID-VER-005)
@@ -27,6 +28,7 @@ let config;
 try {
     config = bootstrap(process.env);
     validateReceiptKeyConfiguration(process.env);
+    validateSigningKeyEncryptionConfiguration(process.env);
 } catch (err) {
     console.error(`❌ [FATAL] ${err.message}`);
     process.exit(1);

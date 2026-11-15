@@ -15,10 +15,12 @@ const { FounderService } = require('./founderService');
 const { ProfileService } = require('./profileService');
 const { SMSService } = require('./smsService');
 const { AuthorizationCodeStore, FirestoreAuthorizationCodeStore } = require('./store');
+const { SigningKeystore } = require('./services/signingKeystore');
 
 const { createAccountRouter } = require('./routes/accountRoutes');
 const { createMfaRouter } = require('./routes/mfaRoutes');
 const { createOAuthRouter } = require('./routes/oauthRoutes');
+const { createJwksRouter } = require('./routes/jwksRoutes');
 const { createProfileRouter } = require('./routes/profileRoutes');
 const { createDeviceSessionRouter } = require('./routes/deviceSessionRoutes');
 const { createPhoneRouter } = require('./routes/phoneRoutes');
@@ -57,6 +59,9 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
   const codeStore = stores.codeStore || (db && typeof db.collection === 'function'
     ? new FirestoreAuthorizationCodeStore(db)
     : new AuthorizationCodeStore());
+  const signingKeystore = services.signingKeystore || (db && typeof db.collection === 'function'
+    ? new SigningKeystore(db)
+    : null);
 
   // Phase 1 Central SSO Services (When config provided)
   let cookieService = null;
@@ -98,6 +103,9 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
     reconcileCustomerAccount
   });
   app.use('/', oauthRouter);
+
+  const jwksRouter = createJwksRouter({ signingKeystore });
+  app.use('/', jwksRouter);
 
   const profileRouter = createProfileRouter({
     profileService,
@@ -213,6 +221,7 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
     profileService,
     smsService,
     codeStore,
+    signingKeystore,
     authMiddleware
   };
 }

@@ -33,10 +33,13 @@ const DEFAULT_RECEIPT_KEY_VERSION = 1;
 /**
  * Checks whether the current process is running in production or staging.
  */
-function isProductionOrStaging() {
-    const nodeEnv = process.env.NODE_ENV;
-    const appEnv = process.env.APP_ENV;
-    return nodeEnv === 'production' || appEnv === 'production' || appEnv === 'staging';
+function isProductionOrStaging(env = process.env) {
+    return (
+        env.NODE_ENV === 'production' ||
+        env.NODE_ENV === 'staging' ||
+        env.APP_ENV === 'production' ||
+        env.APP_ENV === 'staging'
+    );
 }
 
 /**
@@ -146,11 +149,7 @@ function resolveRawReceiptKeyFromEnv(env, numericVersion) {
         if (env.RECEIPT_ENCRYPTION_KEY) {
             return env.RECEIPT_ENCRYPTION_KEY;
         }
-        const isProdOrStagingEnv =
-            env.NODE_ENV === 'production' ||
-            env.APP_ENV === 'production' ||
-            env.APP_ENV === 'staging';
-        if (!isProdOrStagingEnv && env.TOKEN_RECEIPT_KEY) {
+        if (!isProductionOrStaging(env) && env.TOKEN_RECEIPT_KEY) {
             return env.TOKEN_RECEIPT_KEY;
         }
     }
@@ -208,22 +207,21 @@ function resolveReceiptKey(version = getActiveReceiptKeyVersion()) {
  * Throws immediately if dedicated key is missing, weak, or using dev values in production/staging.
  */
 function validateReceiptKeyConfiguration(env = process.env) {
-    const nodeEnv = env.NODE_ENV;
-    const appEnv = env.APP_ENV;
-    const isProd = nodeEnv === 'production' || appEnv === 'production' || appEnv === 'staging';
+    const envLabel = env.APP_ENV || env.NODE_ENV;
+    const isProd = isProductionOrStaging(env);
 
     const activeVersion = parseActiveReceiptKeyVersion(env.ACTIVE_RECEIPT_KEY_VERSION);
     const keyRaw = resolveRawReceiptKeyFromEnv(env, activeVersion);
 
     if (isProd) {
         if (!keyRaw) {
-            throw new Error(`RECEIPT_ENCRYPTION_KEY is required in ${appEnv || nodeEnv} environment for active key version ${activeVersion}.`);
+            throw new Error(`RECEIPT_ENCRYPTION_KEY is required in ${envLabel} environment for active key version ${activeVersion}.`);
         }
         if (typeof keyRaw === 'string') {
             const lower = keyRaw.toLowerCase();
             for (const devStr of KNOWN_DEV_RECEIPT_KEYS) {
                 if (lower.includes(devStr.toLowerCase())) {
-                    throw new Error(`RECEIPT_ENCRYPTION_KEY cannot use a development or default secret in ${appEnv || nodeEnv}.`);
+                    throw new Error(`RECEIPT_ENCRYPTION_KEY cannot use a development or default secret in ${envLabel}.`);
                 }
             }
         }
