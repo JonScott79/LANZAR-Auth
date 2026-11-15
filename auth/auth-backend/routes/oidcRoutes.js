@@ -4,7 +4,7 @@
 const express = require('express');
 const { hasScope } = require('../services/oidcTokenService');
 
-function createOidcRouter({ oidcTokenService, db }) {
+function createOidcRouter({ oidcTokenService, db, clientRegistryService }) {
     const router = express.Router();
 
     router.get('/.well-known/openid-configuration', (req, res) => {
@@ -96,11 +96,33 @@ function createOidcRouter({ oidcTokenService, db }) {
                     error_description: 'Session subject mismatch.'
                 });
             }
-            if (sessionData.tenantId && sessionData.tenantId !== payload.tenant_id) {
+            if (!sessionData.tenantId || sessionData.tenantId !== payload.tenant_id) {
                 return res.status(401).json({
                     error: 'invalid_token',
                     error_description: 'Session tenant mismatch.'
                 });
+            }
+            if (sessionData.clientId && payload.azp && sessionData.clientId !== payload.azp) {
+                return res.status(401).json({
+                    error: 'invalid_token',
+                    error_description: 'Session client mismatch.'
+                });
+            }
+            const requestedTenant = req.headers['x-lanzar-tenant-id'] || (req.query && req.query.tenant_id);
+            if (requestedTenant && String(requestedTenant) !== payload.tenant_id) {
+                return res.status(403).json({
+                    error: 'forbidden',
+                    error_description: 'Token tenant does not match requested tenant.'
+                });
+            }
+            if (clientRegistryService && typeof clientRegistryService.resolveClient === 'function' && payload.azp) {
+                const boundClient = await clientRegistryService.resolveClient(payload.azp);
+                if (!boundClient || !boundClient.enabled || (boundClient.tenantId && boundClient.tenantId !== payload.tenant_id)) {
+                    return res.status(401).json({
+                        error: 'invalid_token',
+                        error_description: 'Client is disabled or unauthorized for this tenant.'
+                    });
+                }
             }
 
             const scope = typeof payload.scope === 'string' ? payload.scope : '';

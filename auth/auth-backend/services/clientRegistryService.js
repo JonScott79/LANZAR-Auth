@@ -108,6 +108,21 @@ class ClientRegistryService {
         return this.db.collection('clients_index').doc(clientId);
     }
 
+    _prepareAuditEvent(auditLogService, auditContext, details) {
+        if (!auditLogService || typeof auditLogService.buildAdminAuditRecord !== 'function' || typeof auditLogService.writeInTransaction !== 'function') {
+            return null;
+        }
+        const ctx = auditContext || {};
+        return auditLogService.buildAdminAuditRecord({
+            actorUid: ctx.actorUid || 'unknown',
+            actorEmail: ctx.actorEmail || null,
+            actorTenantId: ctx.actorTenantId || 'lanzar',
+            actorRole: ctx.actorRole || 'tenant_admin',
+            correlationId: ctx.correlationId || null,
+            ...details
+        });
+    }
+
     async registerClient({
         tenantId = 'lanzar',
         clientId,
@@ -116,7 +131,9 @@ class ClientRegistryService {
         compatibilityMode = 'oidc',
         tokenEndpointAuthMethod = 'none',
         clientSecret,
-        enabled = true
+        enabled = true,
+        auditLogService,
+        auditContext
     }) {
         if (typeof tenantId !== 'string' || !TENANT_ID_REGEX.test(tenantId)) {
             throw new Error('Invalid tenantId format.');
@@ -150,9 +167,18 @@ class ClientRegistryService {
             tokenEndpointAuthMethod,
             ...(tokenEndpointAuthMethod === 'client_secret_post' ? { clientSecretHash: hashClientSecret(clientSecret) } : {}),
             enabled: Boolean(enabled),
+            status: Boolean(enabled) ? 'active' : 'suspended',
             createdAt: nowIso,
             updatedAt: nowIso
         };
+
+        const preparedAudit = this._prepareAuditEvent(auditLogService, auditContext, {
+            targetTenantId: tenantId,
+            clientId,
+            operation: 'client.register',
+            outcome: 'success',
+            metadata: { compatibilityMode, tokenEndpointAuthMethod }
+        });
 
         await this.db.runTransaction(async (tx) => {
             const indexRef = this._indexRef(clientId);
@@ -171,18 +197,30 @@ class ClientRegistryService {
                 enabled: record.enabled,
                 updatedAt: nowIso
             });
+            if (preparedAudit) {
+                auditLogService.writeInTransaction(tx, preparedAudit);
+            }
         });
 
         return sanitizeClientForPublicRead(record);
     }
 
-    async updateClient({ tenantId = 'lanzar', clientId, patch = {} }) {
+    async updateClient({ tenantId = 'lanzar', clientId, patch = {}, auditLogService, auditContext, auditOperation = 'client.update', auditReason = null }) {
         if (typeof tenantId !== 'string' || !TENANT_ID_REGEX.test(tenantId)) {
             throw new Error('Invalid tenantId format.');
         }
         if (typeof clientId !== 'string' || !CLIENT_ID_REGEX.test(clientId)) {
             throw new Error('Invalid clientId format.');
         }
+
+        const preparedAudit = this._prepareAuditEvent(auditLogService, auditContext, {
+            targetTenantId: tenantId,
+            clientId,
+            operation: auditOperation,
+            outcome: 'success',
+            reason: auditReason,
+            metadata: { patchKeys: Object.keys(patch || {}) }
+        });
 
         const updated = await this.db.runTransaction(async (tx) => {
             const indexRef = this._indexRef(clientId);
@@ -220,6 +258,12 @@ class ClientRegistryService {
             }
             if (patch.enabled !== undefined) {
                 next.enabled = Boolean(patch.enabled);
+                next.status = next.enabled ? 'active' : 'suspended';
+                if (!next.enabled && typeof patch.statusReason === 'string' && patch.statusReason.trim()) {
+                    next.statusReason = patch.statusReason.trim().slice(0, 256);
+                } else if (next.enabled) {
+                    next.statusReason = null;
+                }
             }
 
             tx.set(clientRef, next);
@@ -227,12 +271,39 @@ class ClientRegistryService {
                 clientId,
                 tenantId,
                 enabled: next.enabled,
+                status: next.status || (next.enabled ? 'active' : 'suspended'),
                 updatedAt: next.updatedAt
             });
+            if (preparedAudit) {
+                auditLogService.writeInTransaction(tx, preparedAudit);
+            }
             return next;
         });
 
         return sanitizeClientForPublicRead(updated);
+    }
+
+    async disableClient({ tenantId = 'lanzar', clientId, reason = 'admin_disabled', auditLogService, auditContext }) {
+        return this.updateClient({
+            tenantId,
+            clientId,
+            patch: { enabled: false, statusReason: reason },
+            auditLogService,
+            auditContext,
+            auditOperation: 'client.disable',
+            auditReason: reason
+        });
+    }
+
+    async enableClient({ tenantId = 'lanzar', clientId, auditLogService, auditContext }) {
+        return this.updateClient({
+            tenantId,
+            clientId,
+            patch: { enabled: true },
+            auditLogService,
+            auditContext,
+            auditOperation: 'client.enable'
+        });
     }
 
     async resolveClient(clientId, { isProduction } = {}) {
@@ -302,10 +373,17 @@ class ClientRegistryService {
      * (`portal`, `tickets`, `threadline`, `ai`) into `/tenants/lanzar/clients/{clientId}`
      * and `/clients_index/{clientId}`. Prospective clients remain excluded.
      */
-    async seedApprovedInternalClients({ tenantId = 'lanzar' } = {}) {
+    async seedApprovedInternalClients({ tenantId = 'lanzar', auditLogService, auditContext } = {}) {
         const seeded = [];
         for (const [clientId, cfg] of Object.entries(staticApprovedClients)) {
             const nowIso = new Date().toISOString();
+            const preparedAudit = this._prepareAuditEvent(auditLogService, auditContext, {
+                targetTenantId: tenantId,
+                clientId,
+                operation: 'client.seed_internal',
+                outcome: 'success',
+                metadata: { seededClient: clientId }
+            });
             const created = await this.db.runTransaction(async (tx) => {
                 const indexRef = this._indexRef(clientId);
                 const clientRef = this._tenantClientRef(tenantId, clientId);
@@ -322,6 +400,7 @@ class ClientRegistryService {
                     compatibilityMode: cfg.compatibilityMode || 'legacy_firebase',
                     tokenEndpointAuthMethod: 'none',
                     enabled: Boolean(cfg.enabled),
+                    status: Boolean(cfg.enabled) ? 'active' : 'suspended',
                     seeded: true,
                     createdAt: nowIso,
                     updatedAt: nowIso
@@ -333,6 +412,9 @@ class ClientRegistryService {
                     enabled: record.enabled,
                     updatedAt: nowIso
                 });
+                if (preparedAudit) {
+                    auditLogService.writeInTransaction(tx, preparedAudit);
+                }
                 return true;
             });
             if (created) {

@@ -284,6 +284,9 @@ class OidcTokenService {
         if (typeof result.payload.tenant_id !== 'string' || !result.payload.tenant_id) {
             return { valid: false, reason: 'MISSING_TENANT_ID' };
         }
+        if (options.expectedTenantId && result.payload.tenant_id !== options.expectedTenantId) {
+            return { valid: false, reason: 'TENANT_MISMATCH' };
+        }
         return result;
     }
 }

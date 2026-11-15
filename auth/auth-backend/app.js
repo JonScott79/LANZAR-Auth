@@ -18,6 +18,7 @@ const { AuthorizationCodeStore, FirestoreAuthorizationCodeStore } = require('./s
 const { SigningKeystore } = require('./services/signingKeystore');
 const { OidcTokenService } = require('./services/oidcTokenService');
 const { ClientRegistryService } = require('./services/clientRegistryService');
+const { AuditLogService } = require('./services/auditLogService');
 
 const { createAccountRouter } = require('./routes/accountRoutes');
 const { createMfaRouter } = require('./routes/mfaRoutes');
@@ -122,16 +123,23 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
   });
   app.use('/', oauthRouter);
 
+  const auditLogService = services.auditLogService || (
+    db && typeof db.collection === 'function'
+      ? new AuditLogService(db)
+      : null
+  );
+
   const clientRegistryRouter = createClientRegistryRouter({
     clientRegistryService,
-    authenticateAdminMiddleware: authMiddleware.authenticateAdminMiddleware
+    authenticateAdminMiddleware: authMiddleware.authenticateAdminMiddleware,
+    auditLogService
   });
   app.use('/api/admin/id', clientRegistryRouter);
 
   const jwksRouter = createJwksRouter({ signingKeystore });
   app.use('/', jwksRouter);
 
-  const oidcRouter = createOidcRouter({ oidcTokenService, db });
+  const oidcRouter = createOidcRouter({ oidcTokenService, db, clientRegistryService });
   app.use('/', oidcRouter);
 
   const profileRouter = createProfileRouter({

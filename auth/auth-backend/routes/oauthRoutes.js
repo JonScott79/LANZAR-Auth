@@ -211,6 +211,9 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
       const sessionId = `sess_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
       const familyId = `fam_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
       const tenantId = record.tenantId || 'lanzar';
+      if (resolvedClient.tenantId && resolvedClient.tenantId !== tenantId) {
+        return res.status(400).json({ error: 'invalid_grant', error_description: 'Client tenant does not match authorization ceremony tenant.' });
+      }
       const uid = record.uid;
 
       // Safe failure cleanup: Always inspect known sessionId and familyId to handle ambiguous Firestore create outcomes
@@ -423,11 +426,14 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
 
       const tenantId = (typeof tenant_id === 'string' && tenant_id) ? tenant_id : 'lanzar';
 
-      // Pre-authenticate confidential/disabled clients before mutating refresh token family when client_id is supplied
+      // Pre-authenticate confidential/disabled clients and verify tenant binding before mutating refresh token family
       if (req.body && req.body.client_id !== undefined && clientRegistryService) {
         const preClient = await resolveClientAsync(req.body.client_id);
         if (!preClient || !preClient.enabled) {
           return res.status(401).json({ error: 'invalid_client', error_description: 'Unknown or disabled client.' });
+        }
+        if (preClient.tenantId && preClient.tenantId !== tenantId) {
+          return res.status(401).json({ error: 'invalid_client', error_description: 'Client does not belong to requested tenant.' });
         }
         if (typeof clientRegistryService.verifyClientCredentials === 'function' &&
             !clientRegistryService.verifyClientCredentials(preClient, req.body.client_secret)) {
@@ -466,6 +472,9 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
       }
       if (boundClient && !boundClient.enabled) {
         return res.status(401).json({ error: 'invalid_client', error_description: 'Client is disabled.' });
+      }
+      if (boundClient && boundClient.tenantId && boundClient.tenantId !== (authResult.tenantId || tenantId)) {
+        return res.status(401).json({ error: 'invalid_client', error_description: 'Client tenant mismatch.' });
       }
       if (boundClient && clientRegistryService && typeof clientRegistryService.verifyClientCredentials === 'function') {
         if (!clientRegistryService.verifyClientCredentials(boundClient, req.body && req.body.client_secret)) {
