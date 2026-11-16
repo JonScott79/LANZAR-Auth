@@ -12,6 +12,31 @@ function checkIsProduction() {
     }
 }
 
+function checkIsStaging() {
+    try {
+        return resolveEnvironment(process.env) === 'staging';
+    } catch (_) {
+        return process.env.APP_ENV === 'staging';
+    }
+}
+
+const PRODUCTION_ONLY_HOSTS = new Set([
+    'portal.lanzar.me',
+    'tickets.lanzar.me',
+    'threadline.lanzar.me',
+    'threadline-production-1c28.up.railway.app',
+    'ai.lanzar.me'
+]);
+
+function isProductionCallbackUri(uri) {
+    try {
+        const parsed = new URL(uri);
+        return PRODUCTION_ONLY_HOSTS.has(parsed.hostname.toLowerCase());
+    } catch (_) {
+        return false;
+    }
+}
+
 const clients = {
     'portal': {
         id: 'portal',
@@ -88,7 +113,14 @@ function getClient(clientId) {
             redirectUris: client.redirectUris.filter(uri => !uri.startsWith('http://localhost') && !uri.startsWith('http://127.0.0.1'))
         };
     }
+    // In staging (NOVA), prevent static clients from authorizing production callbacks
+    if (checkIsStaging()) {
+        return {
+            ...client,
+            redirectUris: client.redirectUris.filter(uri => !isProductionCallbackUri(uri))
+        };
+    }
     return client;
 }
 
-module.exports = { getClient, clients, checkIsProduction };
+module.exports = { getClient, clients, checkIsProduction, checkIsStaging };
