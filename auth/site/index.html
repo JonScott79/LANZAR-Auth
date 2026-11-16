@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LANZAR ID — Multi-Tenant OIDC &amp; Identity Platform for SaaS</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header>
+    <div class="container nav">
+      <div class="brand">LANZAR <span>ID</span></div>
+      <nav class="nav-links">
+        <a href="#architecture">Security</a>
+        <a href="#quickstart">Quick-Start</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#compare">Compare</a>
+        <a class="btn btn-primary" href="https://lanzar-auth-nova.netlify.app/?view=account">Developer Console</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero" style="border-top:none;">
+      <div class="badge">NOVA Commercial Beta • OIDC + PKCE S256 + RS256 JWKS</div>
+      <h1>Standards-Based SaaS Identity Without Pricing Traps</h1>
+      <p>
+        LANZAR ID gives developers multi-tenant organizations, OAuth 2.0 PKCE authentication, automated RS256 key rotation, refresh-token replay protection, and TOTP MFA—ready in minutes.
+      </p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="https://lanzar-auth-nova.netlify.app/?view=account">Start Free (Developer Plan)</a>
+        <a class="btn" href="#quickstart">Read Quick-Start</a>
+      </div>
+    </section>
+
+    <section id="architecture">
+      <h2>Security Architecture &amp; Auth Methods</h2>
+      <p class="section-sub">Built on standard OpenID Connect and strict tenant isolation—no proprietary token formats or vendor lock-in.</p>
+      <div class="grid-3">
+        <div class="card">
+          <h3>OAuth 2.0 + PKCE S256</h3>
+          <p>Mandatory S256 code challenges, exact redirect URI matching (wildcards rejected), single-use authorization codes, and per-client CORS origins.</p>
+        </div>
+        <div class="card">
+          <h3>RS256 Signing &amp; Rotation</h3>
+          <p>RSA-2048 keys encrypted at rest with AES-256-GCM, published via <code>/.well-known/jwks.json</code>, and retired automatically after a 4,200s grace window.</p>
+        </div>
+        <div class="card">
+          <h3>Refresh Replay &amp; TOTP MFA</h3>
+          <p>Single-use rotating refresh tokens with automatic family revocation on replay, RFC 6238 TOTP authenticator MFA, and single-use recovery codes.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="quickstart">
+      <h2>Developer Quick-Start (Threadline Reference)</h2>
+      <p class="section-sub">Verified against our live Threadline integration. Standard OIDC discovery + Node <code>crypto</code> JWKS verification.</p>
+      <pre>// 1. Discovery: https://auth.lanzar.me/nova/.well-known/openid-configuration
+// 2. Redirect user to /oauth/authorize with PKCE S256, state, and nonce
+// 3. Exchange code at POST https://auth-api-nova.lanzar.me/oauth/token
+
+const res = await fetch('https://auth-api-nova.lanzar.me/oauth/token', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+  body: JSON.stringify({
+    grant_type: 'authorization_code',
+    code,
+    client_id: 'YOUR_CLIENT_ID',
+    redirect_uri: window.location.origin,
+    code_verifier: savedVerifier
+  })
+});
+// Verify access_token RS256 signature against /.well-known/jwks.json in your API.</pre>
+    </section>
+
+    <section id="pricing">
+      <h2>Transparent SaaS Pricing</h2>
+      <p class="section-sub">Start free, upgrade as your user base grows. SMS MFA (when enabled) is billed strictly per-message with a transparent markup—never unlimited.</p>
+      <div class="grid-5">
+        <div class="card">
+          <h3>Developer</h3>
+          <div class="price">$0 <span>/mo</span></div>
+          <ul>
+            <li>Up to 3 applications</li>
+            <li>1,000 MAUs</li>
+            <li>OIDC, PKCE S256, TOTP MFA</li>
+          </ul>
+        </div>
+        <div class="card featured">
+          <h3>Launch</h3>
+          <div class="price">$29 <span>/mo</span></div>
+          <ul>
+            <li>Up to 10 applications</li>
+            <li>10,000 MAUs</li>
+            <li>Usage-billed SMS MFA eligible</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Growth</h3>
+          <div class="price">$99 <span>/mo</span></div>
+          <ul>
+            <li>Up to 25 applications</li>
+            <li>50,000 MAUs</li>
+            <li>Custom domain eligible</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Scale</h3>
+          <div class="price">$299 <span>/mo</span></div>
+          <ul>
+            <li>Up to 100 applications</li>
+            <li>250,000 MAUs</li>
+            <li>Multi-admin orgs &amp; priority support</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Enterprise</h3>
+          <div class="price">Custom</div>
+          <ul>
+            <li>1,000+ applications</li>
+            <li>Custom MAU volume</li>
+            <li><a href="mailto:support@lanzar.me">Contact Sales</a></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="compare">
+      <h2>How LANZAR ID Compares</h2>
+      <p class="section-sub">Honest positioning against Auth0, WorkOS, Stytch, Descope, FusionAuth, Logto, and Frontegg.</p>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Platform</th>
+              <th>Entry Paid Tier</th>
+              <th>OIDC + PKCE + JWKS</th>
+              <th>Refresh Replay Revocation</th>
+              <th>Multi-Tenant Orgs</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>LANZAR ID</strong></td>
+              <td><strong>$29/mo (10k MAU)</strong></td>
+              <td class="yes">Yes</td>
+              <td class="yes">Yes</td>
+              <td class="yes">Yes</td>
+              <td>WebAuthn &amp; SAML/SCIM on post-beta roadmap</td>
+            </tr>
+            <tr><td>Auth0</td><td>Steep jump past 7.5k–10k MAU</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td>Complex enterprise pricing tiers</td></tr>
+            <tr><td>WorkOS</td><td>$125/mo per SAML connection</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td>Strong SAML/SCIM; pricey per connection</td></tr>
+            <tr><td>Stytch</td><td>Usage-based</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td>SDK-heavy model</td></tr>
+            <tr><td>Descope</td><td>$249+/mo Pro</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td>Visual flow builder focus</td></tr>
+            <tr><td>FusionAuth</td><td>Self-host or $100+/mo</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td>Requires self-hosting or higher cloud tier</td></tr>
+            <tr><td>Logto</td><td>$16+/mo Pro</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td>Open-source OIDC alternative</td></tr>
+            <tr><td>Frontegg</td><td>$99–$399+/mo</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td>B2B SaaS portal focus</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="container">
+    <div>© 2026 LANZAR • <a href="mailto:support@lanzar.me">support@lanzar.me</a></div>
+    <div>
+      Draft Legal &amp; Security Docs (pending counsel review): Terms of Service • Privacy Policy • Acceptable Use Policy • Security Overview
+    </div>
+  </footer>
+</body>
+</html>

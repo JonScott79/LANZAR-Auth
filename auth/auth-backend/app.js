@@ -157,7 +157,7 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
     oidcTokenService,
     clientRegistryService,
     tenantService,
-    authHubUrl: config ? config.authHubUrl : undefined
+    authHubUrl: process.env.AUTH_HUB_URL || (config ? config.authHubUrl : undefined)
   });
   app.use('/oauth', oauthRouter);
   app.use('/', oauthRouter);

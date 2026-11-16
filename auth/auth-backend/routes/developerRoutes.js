@@ -42,10 +42,12 @@ function createDeveloperRouter({
         name,
         tenantId
       });
-      if (auditLogService && typeof auditLogService.recordAdminAudit === 'function') {
-        await auditLogService.recordAdminAudit({
+      if (auditLogService && typeof auditLogService.recordAdminEvent === 'function') {
+        await auditLogService.recordAdminEvent({
           actorUid: req.user.uid,
           actorEmail: req.user.email || null,
+          actorTenantId: tenant.tenantId,
+          actorRole: 'owner',
           targetTenantId: tenant.tenantId,
           operation: 'tenant.create',
           outcome: 'success',
@@ -218,11 +220,11 @@ function createDeveloperRouter({
   router.get('/tenants/:tenantId/audit-logs', async (req, res) => {
     try {
       await tenantService.requireTenantRole(req.params.tenantId, req.user.uid, ['owner', 'admin', 'developer']);
-      if (!auditLogService || typeof auditLogService.queryAdminAuditLogs !== 'function') {
+      if (!auditLogService || typeof auditLogService.listTenantAuditLogs !== 'function') {
         return res.json({ logs: [] });
       }
       const limit = Math.min(Number(req.query.limit) || 50, 100);
-      const logs = await auditLogService.queryAdminAuditLogs({ targetTenantId: req.params.tenantId, limit });
+      const logs = await auditLogService.listTenantAuditLogs(req.params.tenantId, { limit });
       return res.json({ logs });
     } catch (err) {
       return res.status(err.status || 400).json({ error: err.code || 'invalid_request', error_description: err.message });
