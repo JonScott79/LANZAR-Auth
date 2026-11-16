@@ -48,12 +48,15 @@ class AuditLogService {
         outcome = 'success',
         reason = null,
         correlationId = null,
-        metadata = {}
+        metadata = {},
+        auditId: explicitAuditId = null
     }) {
         const safeTargetTenant = (typeof targetTenantId === 'string' && targetTenantId.trim())
             ? targetTenantId.trim()
             : 'lanzar';
-        const auditId = `aud_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
+        const auditId = (typeof explicitAuditId === 'string' && explicitAuditId.trim())
+            ? explicitAuditId.trim()
+            : `aud_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
         const record = {
             auditId,
             actorUid: String(actorUid || 'unknown'),

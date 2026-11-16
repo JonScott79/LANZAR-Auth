@@ -1,6 +1,7 @@
 // app.js
 // Universal Express Application Factory for LANZAR ID (Phase 1 & Phase 2 Ecosystem)
 
+const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const { createOriginMiddleware } = require('./middleware/originValidator');
@@ -19,6 +20,7 @@ const { SigningKeystore } = require('./services/signingKeystore');
 const { OidcTokenService } = require('./services/oidcTokenService');
 const { ClientRegistryService } = require('./services/clientRegistryService');
 const { AuditLogService } = require('./services/auditLogService');
+const { PlatformOutboxService } = require('./services/platformOutboxService');
 
 const { createAccountRouter } = require('./routes/accountRoutes');
 const { createMfaRouter } = require('./routes/mfaRoutes');
@@ -47,6 +49,17 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
   app.set('trust proxy', trustProxySetting);
 
   app.use(express.json());
+
+  // Correlation / Request ID Propagation
+  app.use((req, res, next) => {
+    const incomingId = req.headers['x-correlation-id'] || req.headers['x-request-id'];
+    const correlationId = (typeof incomingId === 'string' && incomingId.trim())
+      ? incomingId.trim().slice(0, 128)
+      : crypto.randomUUID();
+    req.correlationId = correlationId;
+    res.setHeader('X-Correlation-ID', correlationId);
+    next();
+  });
 
   // CORS and Origin Validation
   if (config && config.originMap) {
@@ -169,12 +182,21 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
   });
   app.use('/api/id/dispatch', dispatchRouter);
 
+  const platformOutboxService = services.platformOutboxService || (
+    db && typeof db.collection === 'function'
+      ? new PlatformOutboxService(db, authAdmin, { auditLogService })
+      : null
+  );
+
   const adminRouter = createAdminRouter({
     db,
+    authAdmin,
     profileService,
     founderService,
     sessionService,
-    authenticateAdminMiddleware: authMiddleware.authenticateAdminMiddleware
+    authenticateAdminMiddleware: authMiddleware.authenticateAdminMiddleware,
+    auditLogService,
+    platformOutboxService
   });
   app.use('/api/admin/id', adminRouter);
 
@@ -244,6 +266,43 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
     });
   });
 
+  // Readiness endpoint (verifies Firestore connectivity & signing key availability without leaking secrets)
+  app.get('/api/id/ready', async (req, res) => {
+    const checks = { firestore: 'unavailable', signingKeystore: 'unavailable' };
+    try {
+      if (!db || typeof db.collection !== 'function') {
+        return res.status(503).json({ status: 'not_ready', checks, correlationId: req.correlationId });
+      }
+      await db.collection('system_signing_keys').doc('_active_pointer').get();
+      checks.firestore = 'ok';
+
+      if (!signingKeystore || typeof signingKeystore.getPublicJwks !== 'function') {
+        return res.status(503).json({ status: 'not_ready', checks, correlationId: req.correlationId });
+      }
+      const jwks = await signingKeystore.getPublicJwks({ bypassCache: true });
+      const keyCount = Array.isArray(jwks && jwks.keys) ? jwks.keys.length : 0;
+      if (keyCount === 0) {
+        return res.status(503).json({ status: 'not_ready', checks: { ...checks, signingKeystore: 'no_active_keys' }, correlationId: req.correlationId });
+      }
+      checks.signingKeystore = 'ok';
+      return res.status(200).json({ status: 'ready', checks, keyCount, correlationId: req.correlationId });
+    } catch (err) {
+      console.error('[READINESS ERROR]', { correlationId: req.correlationId, message: err.message });
+      return res.status(503).json({ status: 'not_ready', checks, correlationId: req.correlationId });
+    }
+  });
+
+  // Sanitized terminal error handler (never leaks secrets or stack traces)
+  app.use((err, req, res, next) => {
+    console.error('[UNHANDLED ERROR]', { correlationId: req.correlationId, message: err && err.message ? err.message : 'Unknown error' });
+    if (res.headersSent) return next(err);
+    return res.status(500).json({
+      error: 'server_error',
+      error_description: 'An internal error occurred.',
+      correlationId: req.correlationId
+    });
+  });
+
   return {
     app,
     config,
@@ -257,7 +316,8 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
     smsService,
     codeStore,
     signingKeystore,
-    authMiddleware
+    authMiddleware,
+    platformOutboxService
   };
 }
 

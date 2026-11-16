@@ -74,7 +74,9 @@ class FounderService {
         title = null,
         grantReason,
         grantedBy,
-        ipAddress = null
+        ipAddress = null,
+        auditLogService = null,
+        auditPrepared = null
     }) {
         if (!uid || !programId || !grantReason || !grantedBy) {
             throw new Error('uid, programId, grantReason, and grantedBy are required.');
@@ -85,8 +87,8 @@ class FounderService {
             throw new Error(`Invalid founder programId: ${programId}. Valid programs: ${Object.keys(VALID_FOUNDER_PROGRAMS).join(', ')}`);
         }
 
-        const founderRef = this.db.collection('users').doc(uid)
-            .collection('founders').doc(programId);
+        const userRef = this.db.collection('users').doc(uid);
+        const founderRef = userRef.collection('founders').doc(programId);
 
         const nowIso = new Date().toISOString();
         const record = {
@@ -104,8 +106,36 @@ class FounderService {
             revocationReason: null
         };
 
-        await founderRef.set(record);
-        const derivedBadges = await this.recalculateDerivedBadges(uid);
+        let derivedBadges;
+        if (auditLogService && auditPrepared) {
+            if (typeof this.db.runTransaction !== 'function') {
+                throw new Error('Firestore transactions are required for audited founder grants.');
+            }
+            derivedBadges = await this.db.runTransaction(async (tx) => {
+                const activeQuery = userRef.collection('founders').where('active', '==', true);
+                const foundersSnap = await tx.get(activeQuery);
+                const badgeSet = new Set();
+                foundersSnap.forEach(doc => {
+                    const data = doc.data();
+                    if (data && data.active && data.programId) {
+                        badgeSet.add(data.programId);
+                    }
+                });
+                badgeSet.add(programId);
+                const nextBadges = Array.from(badgeSet);
+
+                tx.set(founderRef, record);
+                tx.set(userRef, {
+                    derivedBadges: nextBadges,
+                    updatedAt: FieldValue.serverTimestamp()
+                }, { merge: true });
+                auditLogService.writeInTransaction(tx, auditPrepared);
+                return nextBadges;
+            });
+        } else {
+            await founderRef.set(record);
+            derivedBadges = await this.recalculateDerivedBadges(uid);
+        }
 
         await recordSecurityEvent(this.db, {
             actorUid: grantedBy,
@@ -130,29 +160,68 @@ class FounderService {
         programId,
         revocationReason,
         revokedBy,
-        ipAddress = null
+        ipAddress = null,
+        auditLogService = null,
+        auditPrepared = null
     }) {
         if (!uid || !programId || !revocationReason || !revokedBy) {
             throw new Error('uid, programId, revocationReason, and revokedBy are required.');
         }
 
-        const founderRef = this.db.collection('users').doc(uid)
-            .collection('founders').doc(programId);
-
-        const snap = await founderRef.get();
-        if (!snap.exists || !snap.data().active) {
-            throw new Error('Founder designation does not exist or is already inactive.');
-        }
+        const userRef = this.db.collection('users').doc(uid);
+        const founderRef = userRef.collection('founders').doc(programId);
 
         const nowIso = new Date().toISOString();
-        await founderRef.update({
-            active: false,
-            revokedAt: nowIso,
-            revokedBy: String(revokedBy),
-            revocationReason: String(revocationReason).trim()
-        });
+        let derivedBadges;
 
-        const derivedBadges = await this.recalculateDerivedBadges(uid);
+        if (auditLogService && auditPrepared) {
+            if (typeof this.db.runTransaction !== 'function') {
+                throw new Error('Firestore transactions are required for audited founder revocations.');
+            }
+            derivedBadges = await this.db.runTransaction(async (tx) => {
+                const snap = await tx.get(founderRef);
+                if (!snap.exists || !snap.data().active) {
+                    throw new Error('Founder designation does not exist or is already inactive.');
+                }
+                const activeQuery = userRef.collection('founders').where('active', '==', true);
+                const foundersSnap = await tx.get(activeQuery);
+                const badgeSet = new Set();
+                foundersSnap.forEach(doc => {
+                    const data = doc.data();
+                    if (data && data.active && data.programId && data.programId !== programId) {
+                        badgeSet.add(data.programId);
+                    }
+                });
+                const nextBadges = Array.from(badgeSet);
+
+                tx.update(founderRef, {
+                    active: false,
+                    revokedAt: nowIso,
+                    revokedBy: String(revokedBy),
+                    revocationReason: String(revocationReason).trim()
+                });
+                tx.set(userRef, {
+                    derivedBadges: nextBadges,
+                    updatedAt: FieldValue.serverTimestamp()
+                }, { merge: true });
+                auditLogService.writeInTransaction(tx, auditPrepared);
+                return nextBadges;
+            });
+        } else {
+            const snap = await founderRef.get();
+            if (!snap.exists || !snap.data().active) {
+                throw new Error('Founder designation does not exist or is already inactive.');
+            }
+
+            await founderRef.update({
+                active: false,
+                revokedAt: nowIso,
+                revokedBy: String(revokedBy),
+                revocationReason: String(revocationReason).trim()
+            });
+
+            derivedBadges = await this.recalculateDerivedBadges(uid);
+        }
 
         await recordSecurityEvent(this.db, {
             actorUid: revokedBy,

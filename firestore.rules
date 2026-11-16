@@ -85,6 +85,42 @@ service cloud.firestore {
     match /oauth_codes/{codeHash} {
       allow read, write: if false;
     }
+    match /oauth_authorization_codes/{codeHash} {
+      allow read, write: if false;
+    }
+    match /authorization_codes/{codeHash} {
+      allow read, write: if false;
+    }
+    match /compromised_ceremonies/{ceremonyId} {
+      allow read, write: if false;
+    }
+    match /security_outbox/{eventId} {
+      allow read, write: if false;
+    }
+    match /admin_idempotency/{keyHash} {
+      allow read, write: if false;
+    }
+    match /auth_reconciliation/{uid} {
+      allow read, write: if false;
+    }
+    match /system_signing_keys/{kid} {
+      allow read, write: if false;
+    }
+    match /clients_index/{clientId} {
+      allow read, write: if false;
+    }
+    match /tenants/{tenantId}/clients/{clientId} {
+      allow read, write: if false;
+    }
+    match /tenants/{tenantId}/token_families/{familyId} {
+      allow read, write: if false;
+    }
+    match /tenants/{tenantId}/admin_audit_logs/{auditId} {
+      allow read, create, update, delete: if false;
+    }
+    match /pythos/app/lanzar_id_accounts/{document=**} {
+      allow read, write: if false;
+    }
 
     // 5. Default deny all other paths
     match /{document=**} {
