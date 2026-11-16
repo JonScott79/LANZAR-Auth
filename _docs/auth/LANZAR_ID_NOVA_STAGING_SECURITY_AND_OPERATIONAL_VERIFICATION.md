@@ -179,7 +179,10 @@ Executed after commit `2f22fbf` via `nova_live_verify_extended.mjs` against live
 - **Private Key Protection:** Verified at rest (`NOVA-LIVE-24`, `KEY-01`) — private keys are encrypted with AES-256-GCM (12-byte IV, 16-byte tag, AAD-bound to `lanzar_signing_key:<kid>:v<kekVersion>`) using `SIGNING_KEY_ENCRYPTION_KEY` (versioned `SIGNING_KEY_ENCRYPTION_KEY_V<n>` / `SIGNING_KEY_ENCRYPTION_KEYS`), with zero plaintext PEM in Firestore. Missing KEK in `staging`/`production` fails closed at startup (`KEY-05`).
 - **Lifecycle & Rotation (`KEY-01`–`KEY-06` Verified in Isolated `lanzar-95ae3-dev` Collection):**
   - **States:** `active` (signs new tokens, published in JWKS) -> `verify_only` (demoted on `rotateSigningKey()`, remains in JWKS for grace-period verification) -> `revoked` (excluded from JWKS & signing via `revokeSigningKey()`). JWKS cache TTL is `5000ms`.
-  - **Grace Period Note:** `SigningKeystore` does **not** automatically expire `verify_only` keys on a timer; operators must call `revokeSigningKey(kid)` after active token TTLs (`900s` access / `3600s` ID) + clock skew have elapsed.
+  - **Automated Retirement (`KEY-07` & `RET-01`–`RET-05` Verified):**
+    - `rotateSigningKey()` persists `eligibleForRevocationAt = now + graceSeconds` on `verify_only` keys.
+    - Grace period defaults to **`4200s` (70 min)** = max `ID_TOKEN_TTL_SECONDS` (`3600s` > `ACCESS_TOKEN_TTL_SECONDS` `900s`) + `600s` clock-skew/JWKS-cache margin, with a hard minimum floor of **`3900s`** (`MIN_SAFE_RETIREMENT_GRACE_SECONDS`, rejecting shorter values). Refresh tokens are opaque SHA-256 secrets in `token_families` and are unaffected by signing-key rotation.
+    - `worker.js` runs `signingKeystore.retireEligibleKeys({ auditLogService })` every `60000ms` (`KEY_RETIREMENT_SWEEP_MS`). Inside a Firestore transaction, it protects `_active_pointer.activeKid` and `status === 'active'` keys, retires eligible `verify_only` keys idempotently (`status: 'revoked'`, `revocationReason: 'grace_period_elapsed'`), survives worker restarts via Firestore persistence, and logs `platform.signing_key.auto_retired` to `admin_audit_logs`.
   - **Test Results (`6 / 6 PASS`):** Verified initial key generation & signing (`KEY-01`), atomic rotation to new `kid` (`KEY-02`), old token verification during `verify_only` grace period (`KEY-03`), immediate JWKS removal & `UNKNOWN_OR_REVOKED_KID` rejection after `revokeSigningKey()` (`KEY-04`), unknown `kid` rejection + missing KEK fail-closed (`KEY-05`), and live NOVA JWKS consistency (`KEY-06`).
 
 ---
@@ -189,7 +192,8 @@ Executed after commit `2f22fbf` via `nova_live_verify_extended.mjs` against live
 - Discovery (`https://auth.lanzar.me/nova/.well-known/openid-configuration`) and JWKS (`https://auth.lanzar.me/nova/.well-known/jwks.json`) return consistent `https://auth.lanzar.me/nova` issuer and `https://auth-api-nova.lanzar.me/*` endpoints.
 - Approved clients: `portal`, `tickets`, `threadline`, `ai`. Prospective clients `pythos` and `mothership` remain excluded (`NOVA-LIVE-07`).
 - Production callbacks are stripped in `APP_ENV=staging` (`auth/auth-backend/clients.js`, `NOVA-LIVE-06`).
-- **Adding Future NOVA Staging Clients:** When staging frontends (e.g., `https://portal-nova.lanzar.me`) are provisioned, register them in `lanzar-95ae3-dev` via `POST /api/admin/id/clients` (using `ClientRegistryService` with exact HTTPS callback URIs) or add staging-only URIs to `clients.js` without modifying production `lanzar-95ae3` or `auth-repo:lanzar_id_main_chat`.
+- **Staging Frontend Discovery:** Audited Netlify (`lanzar-portal`, `lanzar-tickets`, `threadline-lanzar`, `lanzar-ai`, `lanzar-auth`) and Railway (`Threadline`, `Lanzar Tickets`, `AuthServer`, `lanzar-id-nova`, excluded `Pythos`/`pythos-staging`). No dedicated staging frontends (`portal-nova`, `tickets-nova`, `threadline-nova`, `ai-dev.lanzar.me`) are live yet (`ai-dev.lanzar.me` has no DNS record). Per policy, no speculative staging clients were created; existing `localhost` staging callbacks (`http://localhost:5173`, `5174`, `5175`, `5176`, `3000`, `3004`, `8000`) remain active and verified (`NOVA-LIVE-10`–`14`).
+- **Adding Future NOVA Staging Clients:** When staging frontends are deployed, register exact HTTPS callbacks in `lanzar-95ae3-dev` via `POST /api/admin/id/clients` (or staging-only entries in `clients.js`) targeting `issuer: https://auth.lanzar.me/nova`, `authorization_endpoint: https://auth-api-nova.lanzar.me/oauth/authorize`, `token_endpoint: https://auth-api-nova.lanzar.me/oauth/token`, `jwks_uri: https://auth-api-nova.lanzar.me/.well-known/jwks.json`, with PKCE `S256` and `Idempotency-Key` on `/oauth/token`.
 
 ---
 
@@ -203,10 +207,17 @@ Executed after commit `2f22fbf` via `nova_live_verify_extended.mjs` against live
 - **`DesiredStateReconciler` (`REC-01`–`REC-04` Verified Live):**
   - Reconciles `users/{uid}` `desiredAuthVersion`/`desiredAuthDisabled` against Firebase Auth `disabled`, and `desiredRevocationVersion`/`desiredRevokedAt` against `appliedRevocationVersion` & `tokensValidAfterTime`, tracking state in `auth_reconciliation/{uid}`.
   - Live-verified: silent Firestore drift (`desiredAuthDisabled: true`) detected and repaired by live `lanzar-id-nova-worker` (`REC-01`, `CONVERGED` v2), repeat reconciliation is idempotent (`driftDetected: false`, `REC-02`), failed repair transitions to `DRIFT_RETRYABLE` and recovers (`REC-03`), and unrelated tenants (`tenant_beta`) are unaffected (`REC-04`).
-- **Alerting & Operational Signals (Zero-Cost Baseline vs Recommended):**
-  - **Available Now:** Railway deploy/runtime logs, `/api/id/health`, `/api/id/ready` (`503` on Firestore/keystore failure), and `GET /api/admin/id/telemetry` / `security_outbox` (`status == 'DEAD_LETTER'`) / `auth_reconciliation` (`status == 'DEAD_LETTER'`).
-  - **Limitation:** Passive logging and pull endpoints do **not** constitute active alerting.
-  - **Recommended Pre-Launch Thresholds:** Alert immediately on any `DEAD_LETTER` count `>= 1`, `/api/id/ready != 200` for >1 min, or `[WORKER FATAL]` restarts via free-tier uptime/webhook monitor (e.g., Better Stack / UptimeRobot + Slack/email webhook) or GCP/PagerDuty post-launch.
+- **Alerting, Worker Health & `DEAD_LETTER` Monitoring (`MON-01`, `MON-02` Verified Live):**
+  - **Worker Heartbeat:** `worker.js` writes `system_worker_health/outbox_worker` every `30000ms` (`WORKER_HEARTBEAT_INTERVAL_MS`).
+  - **Admin-Only Telemetry (`GET /api/admin/id/telemetry`, `requirePlatformAdmin`):** Reports `outbox.{deadLetterCount, failedRetryableCount, pendingCount}`, `reconciliation.deadLetterCount`, `worker.{status: 'healthy'|'stale'|'unknown', lastHeartbeatAt, ageSeconds}` (`stale` if `ageSeconds > 90`), and `alerts.{deadLetterPresent, workerStale}` (`status: 'degraded'` when either is true). Public access is denied (`401`, `MON-01`).
+  - **Free-Tier External Uptime Monitor (Requires Jon's Account Setup):**
+    - Provider: **UptimeRobot** or **Better Stack** free tier (`\$0/mo`).
+    - Target: `GET https://auth-api-nova.lanzar.me/api/id/ready` (1–5 min interval).
+    - Alert condition: HTTP status `!= 200` (e.g., `503` on Firestore or keystore failure) -> email/Slack notification.
+  - **Operator Alert Investigation & Resolution Runbook:**
+    1. *Readiness Alert (`!= 200`):* Check Railway `lanzar-id-nova-api` logs (`[READINESS ERROR]`), verify `lanzar-95ae3-dev` Firestore connectivity and `system_signing_keys/_active_pointer`.
+    2. *`DEAD_LETTER` Alert (`deadLetterCount >= 1`):* Query `GET /api/admin/id/outbox/:outboxId` or Firestore `security_outbox` (`status == 'DEAD_LETTER'`) to inspect `lastErrorCode`, `attempts`, and `targetUid`; fix root cause (e.g., missing user/permissions) and trigger `POST /api/admin/id/outbox/:outboxId/redrive`.
+    3. *Worker Stale Alert (`worker.status == 'stale'`):* Inspect Railway `lanzar-id-nova-worker` deployment & logs (`[WORKER FATAL]`, `[WORKER HEARTBEAT ERROR]`) and restart/redeploy if crashed.
 
 ---
 
@@ -237,13 +248,12 @@ Executed after commit `2f22fbf` via `nova_live_verify_extended.mjs` against live
 
 1. **Launch Blockers (Must Resolve Before First Customer)**
    - **Blaze Billing, PITR, Backups & TTL (`PENDING — BILLING ACTIVATION`):** `lanzar-95ae3-dev` lacks PITR, delete protection, scheduled backups, and `authorization_codes.expiresAt` TTL.
-   - **Active Monitoring & Alerting:** No external uptime checks, `/api/id/ready` monitors, or `DEAD_LETTER` count alerts are configured yet (passive logs/telemetry only).
-   - **Staging Frontend Callback Registration:** No staging frontend apps (`portal-nova`, `threadline-nova`, etc.) are deployed or registered in `lanzar-95ae3-dev` yet.
+   - **External Alerting Registration:** Free-tier uptime monitor (UptimeRobot / Better Stack) for `https://auth-api-nova.lanzar.me/api/id/ready` and scheduled admin telemetry check (`DEAD_LETTER >= 1` / `worker.status == 'stale'`) require Jon's account registration.
+   - **Staging Frontend Callback Registration:** No dedicated staging frontend apps (`portal-nova`, `threadline-nova`, etc.) are deployed yet.
 
 2. **Important Pre-Launch Improvements**
    - **Distributed Rate Limiting (Option C / Option A):** Required before scaling `lanzar-id-nova-api` past 1 replica.
    - **TTL Schema Migration Plan:** `token_families.expiresAt`, `sessions.expiresAt`, `central_sessions.*ExpiresAt`, and `admin_idempotency.expiresAt` use ISO strings or epoch numbers and will accumulate indefinitely without a Timestamp migration or scheduled cleanup job.
-   - **Signing Key Grace-Period Automation / Runbook:** `verify_only` keys remain in JWKS until explicit `revokeSigningKey(kid)`; add an operational rotation script or scheduled cleanup check.
 
 3. **Future Scalability Enhancements**
    - Edge WAF caching/shielding for `/.well-known/jwks.json` and `/.well-known/openid-configuration`.
@@ -253,10 +263,10 @@ Executed after commit `2f22fbf` via `nova_live_verify_extended.mjs` against live
 
 | Category | Item | Status |
 |---|---|---|
-| **Completed & Verified** | OIDC Discovery, JWKS, PKCE `S256`, RS256 signing & key rotation/grace/revocation (`KEY-01..06`), refresh rotation/replay, auth-code replay session revocation, tenant isolation, admin RBAC/idempotency, Firestore rules, composite indexes (`users`, `admins`, `sessions`), worker suspension/reactivation & expired-lease recovery, `DEAD_LETTER` retry/backoff/redrive (`DLQ-01..04`), `DesiredStateReconciler` drift detection/repair (`REC-01..04`), SA cross-project isolation, prod callback blocking | **Verified Live (`27 / 27` + `14 / 14`) & Local (`96 / 96`)** |
+| **Completed & Verified** | OIDC Discovery, JWKS, PKCE `S256`, RS256 signing & automated key retirement (`KEY-01..07`, `RET-01..05`), refresh rotation/replay, auth-code replay session revocation, tenant isolation, admin RBAC/idempotency, Firestore rules, composite indexes (`users`, `admins`, `sessions`), worker suspension/reactivation & expired-lease recovery, `DEAD_LETTER` retry/backoff/redrive (`DLQ-01..04`), `DesiredStateReconciler` drift detection/repair (`REC-01..04`), worker heartbeat & admin DLQ telemetry (`MON-01..02`), SA cross-project isolation, prod callback blocking | **Verified Live (`27 / 27` + `17 / 17`) & Local (`101 / 101`)** |
 | **Prepared Awaiting Billing** | Firestore PITR, Delete Protection, Daily 7d Backup Schedule, `authorization_codes.expiresAt` TTL | **`PENDING — BILLING ACTIVATION`** |
-| **Decisions Awaiting Approval** | Distributed rate-limiting architecture (**Option C Hybrid** recommended) & TTL schema migration for `token_families` / `sessions` / `admin_idempotency` | **Awaiting Jon's Approval** |
-| **Remaining Launch-Readiness** | External uptime & `DEAD_LETTER` alerting setup, staging frontend callback registration | **Open** |
+| **Decisions / Accounts Awaiting Jon** | UptimeRobot/Better Stack free-tier registration for `/api/id/ready`, distributed rate-limiting approval (**Option C Hybrid**), TTL schema migration | **Awaiting Jon** |
+| **Remaining Launch-Readiness** | Staging frontend callback registration once staging frontends are deployed | **Open** |
 
 ---
 
