@@ -18,15 +18,24 @@ const DEFAULT_JWKS_CACHE_TTL_MS = 5 * 1000;
 const RSA_MODULUS_LENGTH = 2048;
 const ACTIVE_POINTER_DOC_ID = '_active_pointer';
 const MAX_SIGNED_TOKEN_TTL_SECONDS = 3600; // Matches ID_TOKEN_TTL_SECONDS (3600s > ACCESS_TOKEN_TTL_SECONDS 900s)
-const CLOCK_SKEW_AND_CACHE_MARGIN_SECONDS = 600; // 10 min buffer for clock skew & JWKS cache TTL
-const MIN_SAFE_RETIREMENT_GRACE_SECONDS = 3900; // Hard floor: 3600s max token TTL + 300s min skew
-const DEFAULT_RETIREMENT_GRACE_SECONDS = MAX_SIGNED_TOKEN_TTL_SECONDS + CLOCK_SKEW_AND_CACHE_MARGIN_SECONDS; // 4200s (70 min)
+const MAX_CLOCK_SKEW_SECONDS = 300; // 5 min standard OIDC verifier clock-skew tolerance
+const JWKS_HTTP_CACHE_MAX_AGE_SECONDS = 60; // Matches jwksRoutes.js Cache-Control: public, max-age=60
+const JWKS_INTERNAL_CACHE_TTL_SECONDS = Math.ceil(DEFAULT_JWKS_CACHE_TTL_MS / 1000); // 5s
+const RETIREMENT_PROPAGATION_BUFFER_SECONDS = 235; // Rounds total worst-case window to 4200s (70 min)
+// Evidence-based minimum = default = 4200s (3600s token + 300s skew + 65s JWKS caches + 235s propagation buffer)
+const MIN_SAFE_RETIREMENT_GRACE_SECONDS =
+    MAX_SIGNED_TOKEN_TTL_SECONDS +
+    MAX_CLOCK_SKEW_SECONDS +
+    JWKS_HTTP_CACHE_MAX_AGE_SECONDS +
+    JWKS_INTERNAL_CACHE_TTL_SECONDS +
+    RETIREMENT_PROPAGATION_BUFFER_SECONDS;
+const DEFAULT_RETIREMENT_GRACE_SECONDS = MIN_SAFE_RETIREMENT_GRACE_SECONDS;
 
 function validateRetirementGraceSeconds(rawSeconds) {
     const num = Number(rawSeconds);
     if (!Number.isFinite(num) || !Number.isInteger(num) || num < MIN_SAFE_RETIREMENT_GRACE_SECONDS) {
         throw new Error(
-            `Signing key retirement grace period must be an integer >= ${MIN_SAFE_RETIREMENT_GRACE_SECONDS}s (max token TTL 3600s + 300s skew), got "${rawSeconds}".`
+            `Signing key retirement grace period must be an integer >= ${MIN_SAFE_RETIREMENT_GRACE_SECONDS}s (3600s ID token TTL + 300s skew + 65s JWKS caches + 235s propagation buffer), got "${rawSeconds}".`
         );
     }
     return num;

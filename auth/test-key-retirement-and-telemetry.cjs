@@ -3,6 +3,10 @@
 
 const assert = require('assert');
 const crypto = require('crypto');
+const path = require('path');
+const express = require(require.resolve('express', { paths: [path.join(__dirname, 'auth-backend')] }));
+const { createAdminRouter } = require('./auth-backend/routes/adminRoutes');
+const { createApp } = require('./auth-backend/app');
 const {
   SigningKeystore,
   MIN_SAFE_RETIREMENT_GRACE_SECONDS,
@@ -21,6 +25,16 @@ function createInMemoryDb() {
     return {
       id,
       collection: (subCol) => makeColRef(`${colName}/${id}/${subCol}`),
+      limit: (n) => ({
+        async get() {
+          const docs = [];
+          for (const [id, data] of getCol(name).entries()) {
+            if (docs.length >= n) break;
+            docs.push({ id, data: () => ({ ...data }) });
+          }
+          return { empty: docs.length === 0, size: docs.length, docs, forEach: (cb) => docs.forEach(cb) };
+        }
+      }),
       async get() {
         const data = getCol(colName).get(id);
         return { exists: data !== undefined, id, data: () => (data ? { ...data } : undefined) };
@@ -40,14 +54,34 @@ function createInMemoryDb() {
     return {
       doc: (id) => makeDocRef(name, id),
       where: (field, op, val) => ({
+        limit: (n) => ({
         async get() {
+          const docs = [];
+          for (const [id, data] of getCol(name).entries()) {
+            if (docs.length >= n) break;
+            docs.push({ id, data: () => ({ ...data }) });
+          }
+          return { empty: docs.length === 0, size: docs.length, docs, forEach: (cb) => docs.forEach(cb) };
+        }
+      }),
+      async get() {
           const docs = [];
           for (const [id, data] of getCol(name).entries()) {
             if (op === '==' && data[field] === val) {
               docs.push({ id, data: () => ({ ...data }) });
             }
           }
-          return { empty: docs.length === 0, size: docs.length, docs };
+          return { empty: docs.length === 0, size: docs.length, docs, forEach: (cb) => docs.forEach(cb) };
+        }
+      }),
+      limit: (n) => ({
+        async get() {
+          const docs = [];
+          for (const [id, data] of getCol(name).entries()) {
+            if (docs.length >= n) break;
+            docs.push({ id, data: () => ({ ...data }) });
+          }
+          return { empty: docs.length === 0, size: docs.length, docs, forEach: (cb) => docs.forEach(cb) };
         }
       }),
       async get() {
@@ -55,7 +89,7 @@ function createInMemoryDb() {
         for (const [id, data] of getCol(name).entries()) {
           docs.push({ id, data: () => ({ ...data }) });
         }
-        return { empty: docs.length === 0, size: docs.length, docs };
+        return { empty: docs.length === 0, size: docs.length, docs, forEach: (cb) => docs.forEach(cb) };
       }
     };
   }
@@ -80,12 +114,13 @@ async function run() {
 
   let passed = 0;
 
-  // 1. Grace period floor enforcement
-  assert.strictEqual(MIN_SAFE_RETIREMENT_GRACE_SECONDS, 3900);
+  // 1. Grace period floor enforcement (evidence-based 4200s = 3600s ID token + 300s skew + 65s JWKS cache + 235s buffer)
+  assert.strictEqual(MIN_SAFE_RETIREMENT_GRACE_SECONDS, 4200);
   assert.strictEqual(DEFAULT_RETIREMENT_GRACE_SECONDS, 4200);
-  assert.throws(() => validateRetirementGraceSeconds(60), /3900/);
-  assert.throws(() => validateRetirementGraceSeconds('invalid'), /3900/);
-  console.log('  ✓ [PASS] RET-01: Unsafe short grace periods (< 3900s) rejected');
+  assert.throws(() => validateRetirementGraceSeconds(60), /4200/);
+  assert.throws(() => validateRetirementGraceSeconds(3900), /4200/);
+  assert.throws(() => validateRetirementGraceSeconds('invalid'), /4200/);
+  console.log('  ✓ [PASS] RET-01: Unsafe short grace periods (< 4200s) rejected');
   passed++;
 
   const db = createInMemoryDb();
@@ -135,6 +170,74 @@ async function run() {
   assert.strictEqual(repeatSweep.retiredKids.length, 0);
   console.log('  ✓ [PASS] RET-05: Repeated retirement sweep is idempotent');
   passed++;
+
+  // 6. Telemetry DEAD_LETTER & stale-worker degraded alert detection
+  const telApp = express();
+  telApp.use(express.json());
+  const stubAuthAdmin = { verifyIdToken: async () => ({ uid: 'adm1', email: 'a@lanzar.me' }) };
+  const adminRouter = createAdminRouter({
+    db,
+    authAdmin: stubAuthAdmin,
+    auditLogService,
+    authenticateAdminMiddleware: (req, res, next) => {
+      req.uid = 'adm1';
+      req.user = { uid: 'adm1', email: 'a@lanzar.me' };
+      req.isAdmin = true;
+      req.adminContext = { uid: 'adm1', isPlatformAdmin: true, tenantId: 'lanzar' };
+      next();
+    }
+  });
+  telApp.use('/api/admin/id', adminRouter);
+
+  const srv = await new Promise((resolve) => {
+    const s = telApp.listen(0, '127.0.0.1', () => resolve(s));
+  });
+  try {
+    const base = `http://127.0.0.1:${srv.address().port}`;
+    // Healthy heartbeat, 0 DLQ -> nominal
+    await db.collection('system_worker_health').doc('outbox_worker').set({
+      workerId: 'w1',
+      lastHeartbeatMs: Date.now(),
+      lastHeartbeatAt: new Date().toISOString()
+    });
+    const tNom = await (await fetch(`${base}/api/admin/id/telemetry`)).json();
+    assert.strictEqual(tNom.status, 'nominal');
+    assert.strictEqual(tNom.worker.status, 'healthy');
+    assert.strictEqual(tNom.alerts.deadLetterPresent, false);
+
+    // Add DEAD_LETTER + stale heartbeat (>90s) -> degraded
+    await db.collection('security_outbox').doc('ob1').set({ status: 'DEAD_LETTER' });
+    await db.collection('system_worker_health').doc('outbox_worker').set({
+      workerId: 'w1',
+      lastHeartbeatMs: Date.now() - 120 * 1000,
+      lastHeartbeatAt: new Date(Date.now() - 120 * 1000).toISOString()
+    });
+    const tDeg = await (await fetch(`${base}/api/admin/id/telemetry`)).json();
+    assert.strictEqual(tDeg.status, 'degraded');
+    assert.strictEqual(tDeg.outbox.deadLetterCount, 1);
+    assert.strictEqual(tDeg.worker.status, 'stale');
+    assert.strictEqual(tDeg.alerts.deadLetterPresent, true);
+    assert.strictEqual(tDeg.alerts.workerStale, true);
+    console.log('  ✓ [PASS] RET-06: Admin telemetry detects DEAD_LETTER >= 1 and stale worker (>90s) as degraded');
+    passed++;
+  } finally {
+    srv.close();
+  }
+
+  // 7. /api/id/ready returns 503 when Firestore or SigningKeystore fails
+  const brokenApp = createApp({ db: null, authAdmin: stubAuthAdmin });
+  const srvReady = await new Promise((resolve) => {
+    const s = brokenApp.app.listen(0, '127.0.0.1', () => resolve(s));
+  });
+  try {
+    const base = `http://127.0.0.1:${srvReady.address().port}`;
+    const readyFail = await fetch(`${base}/api/id/ready`);
+    assert.strictEqual(readyFail.status, 503);
+    console.log('  ✓ [PASS] RET-07: /api/id/ready returns 503 when Firestore/keystore is unavailable');
+    passed++;
+  } finally {
+    srvReady.close();
+  }
 
   console.log(`\nALL ${passed} UNIT CHECKS PASSED.\n`);
 }
