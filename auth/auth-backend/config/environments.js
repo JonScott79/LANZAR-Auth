@@ -59,13 +59,16 @@ const ENV_CONFIGS = {
       'https://id-dev.lanzar.me': 'id_portal',
       'https://portal-dev.lanzar.me': 'mission_control',
       'https://dev.lanzar.me': 'marketing_site',
-      'https://auth.lanzar.me': 'auth_hub'
+      'https://auth.lanzar.me': 'auth_hub',
+      'https://lanzar-auth-nova.netlify.app': 'auth_hub',
+      'https://threadline-nova.netlify.app': 'threadline'
     },
     continuationAllowlist: [
       'https://id-dev.lanzar.me/',
       'https://pythos-dev.lanzar.me/',
       'https://tickets-dev.lanzar.me/',
       'https://threadline-dev.lanzar.me/',
+      'https://threadline-nova.netlify.app/',
       'https://ai-dev.lanzar.me/',
       'https://portal-dev.lanzar.me/'
     ]

@@ -161,8 +161,8 @@ function runStagingBootstrapTests() {
   try {
     const config = bootstrap(VALID_STAGING_ENV);
     const originMap = config.originMap;
-    const hasDevOrigins = Object.keys(originMap).every(origin => 
-      origin.includes('-dev') || origin.includes('localhost') || origin.includes('dev.lanzar.me') || origin === 'https://auth.lanzar.me'
+    const hasDevOrigins = Object.keys(originMap).every(origin =>
+      origin.includes('-dev') || origin.includes('localhost') || origin.includes('dev.lanzar.me') || origin === 'https://auth.lanzar.me' || origin.endsWith('-nova.netlify.app')
     );
     const hasZeroProdOrigins = !Boolean(originMap['https://id.lanzar.me']) &&
                                !Boolean(originMap['https://portal.lanzar.me']) &&

@@ -28,10 +28,23 @@ const PRODUCTION_ONLY_HOSTS = new Set([
     'ai.lanzar.me'
 ]);
 
+const STAGING_ONLY_HOSTS = new Set([
+    'threadline-nova.netlify.app'
+]);
+
 function isProductionCallbackUri(uri) {
     try {
         const parsed = new URL(uri);
         return PRODUCTION_ONLY_HOSTS.has(parsed.hostname.toLowerCase());
+    } catch (_) {
+        return false;
+    }
+}
+
+function isStagingCallbackUri(uri) {
+    try {
+        const parsed = new URL(uri);
+        return STAGING_ONLY_HOSTS.has(parsed.hostname.toLowerCase());
     } catch (_) {
         return false;
     }
@@ -76,6 +89,8 @@ const clients = {
         redirectUris: [
             'http://localhost:5175',
             'http://localhost:5175/',
+            'https://threadline-nova.netlify.app',
+            'https://threadline-nova.netlify.app/',
             'https://threadline.lanzar.me',
             'https://threadline.lanzar.me/',
             'https://threadline-production-1c28.up.railway.app',
@@ -106,11 +121,11 @@ function getClient(clientId) {
     const client = clients[clientId];
     if (!client) return null;
 
-    // In production, strictly enforce HTTPS and strip localhost redirect destinations
+    // In production, strictly enforce HTTPS and strip localhost & staging-only redirect destinations
     if (checkIsProduction()) {
         return {
             ...client,
-            redirectUris: client.redirectUris.filter(uri => !uri.startsWith('http://localhost') && !uri.startsWith('http://127.0.0.1'))
+            redirectUris: client.redirectUris.filter(uri => !uri.startsWith('http://localhost') && !uri.startsWith('http://127.0.0.1') && !isStagingCallbackUri(uri))
         };
     }
     // In staging (NOVA), prevent static clients from authorizing production callbacks
