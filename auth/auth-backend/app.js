@@ -136,6 +136,7 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
     oidcTokenService,
     clientRegistryService
   });
+  app.use('/oauth', oauthRouter);
   app.use('/', oauthRouter);
 
   const auditLogService = services.auditLogService || (
