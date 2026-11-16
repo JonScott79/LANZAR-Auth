@@ -124,10 +124,10 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
         scope: typeof scope === 'string' && scope.trim() ? normalizeScope(scope) : 'openid profile email',
         nonce: typeof nonce === 'string' && nonce ? nonce : null,
         userClaims: {
-          email: decodedToken.email,
-          emailVerified: decodedToken.email_verified,
-          name: decodedToken.name,
-          authTime: decodedToken.auth_time
+          email: decodedToken.email ?? null,
+          emailVerified: Boolean(decodedToken.email_verified),
+          name: decodedToken.name ?? null,
+          authTime: decodedToken.auth_time ?? null
         },
         mfaVerified: isAdmin || hasMfa
       });
