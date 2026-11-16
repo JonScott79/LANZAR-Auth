@@ -17,6 +17,28 @@ const DEFAULT_KEK_VERSION = 1;
 const DEFAULT_JWKS_CACHE_TTL_MS = 5 * 1000;
 const RSA_MODULUS_LENGTH = 2048;
 const ACTIVE_POINTER_DOC_ID = '_active_pointer';
+const MAX_SIGNED_TOKEN_TTL_SECONDS = 3600; // Matches ID_TOKEN_TTL_SECONDS (3600s > ACCESS_TOKEN_TTL_SECONDS 900s)
+const CLOCK_SKEW_AND_CACHE_MARGIN_SECONDS = 600; // 10 min buffer for clock skew & JWKS cache TTL
+const MIN_SAFE_RETIREMENT_GRACE_SECONDS = 3900; // Hard floor: 3600s max token TTL + 300s min skew
+const DEFAULT_RETIREMENT_GRACE_SECONDS = MAX_SIGNED_TOKEN_TTL_SECONDS + CLOCK_SKEW_AND_CACHE_MARGIN_SECONDS; // 4200s (70 min)
+
+function validateRetirementGraceSeconds(rawSeconds) {
+    const num = Number(rawSeconds);
+    if (!Number.isFinite(num) || !Number.isInteger(num) || num < MIN_SAFE_RETIREMENT_GRACE_SECONDS) {
+        throw new Error(
+            `Signing key retirement grace period must be an integer >= ${MIN_SAFE_RETIREMENT_GRACE_SECONDS}s (max token TTL 3600s + 300s skew), got "${rawSeconds}".`
+        );
+    }
+    return num;
+}
+
+function resolveRetirementGraceSeconds(env = process.env) {
+    const raw = env && env.SIGNING_KEY_RETIREMENT_GRACE_SECONDS;
+    if (raw === undefined || raw === null || String(raw).trim() === '') {
+        return DEFAULT_RETIREMENT_GRACE_SECONDS;
+    }
+    return validateRetirementGraceSeconds(String(raw).trim());
+}
 
 const KNOWN_DEV_KEKS = [
     'LANZAR_ID_DEV_SIGNING_KEK_V1_TEST_ONLY_32B',
@@ -342,8 +364,11 @@ class SigningKeystore {
      * - Demotes existing `active` key(s) to `verify_only` so existing tokens remain verifiable.
      * - Activates a fresh RSA-2048 key pair pre-generated outside the transaction callback.
      */
-    async rotateSigningKey() {
-        const candidateRecord = generateRsaSigningKeyRecord(Date.now());
+    async rotateSigningKey({ nowMs = Date.now(), graceSeconds } = {}) {
+        const effectiveGraceSec = graceSeconds !== undefined
+            ? validateRetirementGraceSeconds(graceSeconds)
+            : resolveRetirementGraceSeconds(process.env);
+        const candidateRecord = generateRsaSigningKeyRecord(nowMs);
 
         const result = await this.db.runTransaction(async (tx) => {
             const pointerRef = this._collectionRef().doc(ACTIVE_POINTER_DOC_ID);
@@ -354,7 +379,8 @@ class SigningKeystore {
                 : null;
             const activeSnap = await tx.get(this._collectionRef().where('status', '==', 'active'));
 
-            const nowIso = new Date().toISOString();
+            const nowIso = new Date(nowMs).toISOString();
+            const eligibleForRevocationAt = new Date(nowMs + effectiveGraceSec * 1000).toISOString();
             const demoteIds = new Set();
             for (const docSnap of activeSnap.docs) {
                 demoteIds.add(docSnap.id);
@@ -367,7 +393,9 @@ class SigningKeystore {
             for (const kid of rotatedIds) {
                 tx.update(this._collectionRef().doc(kid), {
                     status: 'verify_only',
-                    rotatedAt: nowIso
+                    rotatedAt: nowIso,
+                    eligibleForRevocationAt,
+                    retirementGraceSeconds: effectiveGraceSec
                 });
             }
 
@@ -376,13 +404,108 @@ class SigningKeystore {
                 activeKid: candidateRecord.kid,
                 updatedAt: nowIso
             });
-            return { newRecord: candidateRecord, rotatedIds };
+            return { newRecord: candidateRecord, rotatedIds, eligibleForRevocationAt, retirementGraceSeconds: effectiveGraceSec };
         });
 
         this.invalidateCache();
         this._cachedActive = result.newRecord;
         this._cacheExpiresAt = Date.now() + this.cacheTtlMs;
         return result;
+    }
+
+    /**
+     * Idempotently retires `verify_only` keys whose grace period has elapsed.
+     * Safeguards:
+     * - Never retires `_active_pointer.activeKid` or any `active` key.
+     * - Respects `MIN_SAFE_RETIREMENT_GRACE_SECONDS` (3900s floor).
+     * - Writes an audit log record via `auditLogService` when provided.
+     */
+    async retireEligibleKeys({ nowMs = Date.now(), graceSeconds, auditLogService = null } = {}) {
+        const effectiveGraceSec = graceSeconds !== undefined
+            ? validateRetirementGraceSeconds(graceSeconds)
+            : resolveRetirementGraceSeconds(process.env);
+
+        const verifyOnlySnap = await this._collectionRef().where('status', '==', 'verify_only').get();
+        const retiredKids = [];
+        const skippedKids = [];
+
+        for (const docSnap of verifyOnlySnap.docs) {
+            const kid = docSnap.id;
+            if (kid === ACTIVE_POINTER_DOC_ID) continue;
+            const data = docSnap.data() || {};
+
+            let eligibleAtMs = data.eligibleForRevocationAt ? Date.parse(data.eligibleForRevocationAt) : NaN;
+            if (!Number.isFinite(eligibleAtMs) && data.rotatedAt) {
+                const rotatedMs = Date.parse(data.rotatedAt);
+                if (Number.isFinite(rotatedMs)) {
+                    eligibleAtMs = rotatedMs + effectiveGraceSec * 1000;
+                }
+            }
+            if (!Number.isFinite(eligibleAtMs) || nowMs < eligibleAtMs) {
+                skippedKids.push({ kid, reason: 'GRACE_PERIOD_ACTIVE' });
+                continue;
+            }
+
+            const outcome = await this.db.runTransaction(async (tx) => {
+                const pointerRef = this._collectionRef().doc(ACTIVE_POINTER_DOC_ID);
+                const keyRef = this._collectionRef().doc(kid);
+                const [pointerSnap, freshSnap] = await Promise.all([tx.get(pointerRef), tx.get(keyRef)]);
+
+                if (!freshSnap.exists) {
+                    return { retired: false, reason: 'NOT_FOUND' };
+                }
+                const fresh = freshSnap.data() || {};
+                const activeKid = pointerSnap.exists && pointerSnap.data() ? pointerSnap.data().activeKid : null;
+                if (activeKid === kid || fresh.status === 'active') {
+                    return { retired: false, reason: 'ACTIVE_KEY_PROTECTED' };
+                }
+                if (fresh.status !== 'verify_only') {
+                    return { retired: false, reason: `ALREADY_${String(fresh.status || 'UNKNOWN').toUpperCase()}` };
+                }
+
+                const nowIso = new Date(nowMs).toISOString();
+                tx.update(keyRef, {
+                    status: 'revoked',
+                    revokedAt: nowIso,
+                    revocationReason: 'grace_period_elapsed',
+                    retiredBy: 'system:worker'
+                });
+
+                if (auditLogService && typeof auditLogService.buildAdminAuditRecord === 'function') {
+                    const prepared = auditLogService.buildAdminAuditRecord({
+                        auditId: `aud_key_retire_${kid}`,
+                        actorUid: 'system:worker',
+                        actorEmail: null,
+                        actorTenantId: 'lanzar',
+                        actorRole: 'system',
+                        targetTenantId: 'lanzar',
+                        clientId: kid,
+                        operation: 'platform.signing_key.auto_retired',
+                        outcome: 'success',
+                        metadata: {
+                            kid,
+                            rotatedAt: fresh.rotatedAt || null,
+                            eligibleForRevocationAt: new Date(eligibleAtMs).toISOString(),
+                            graceSeconds: effectiveGraceSec
+                        }
+                    });
+                    auditLogService.writeInTransaction(tx, prepared);
+                }
+
+                return { retired: true };
+            });
+
+            if (outcome.retired) {
+                retiredKids.push(kid);
+            } else {
+                skippedKids.push({ kid, reason: outcome.reason });
+            }
+        }
+
+        if (retiredKids.length > 0) {
+            this.invalidateCache();
+        }
+        return { retiredKids, skippedKids };
     }
 
     /**
@@ -539,5 +662,9 @@ module.exports = {
     encryptPrivateKeyPem,
     decryptPrivateKeyPem,
     generateRsaSigningKeyRecord,
-    sanitizePublicJwk
+    sanitizePublicJwk,
+    resolveRetirementGraceSeconds,
+    validateRetirementGraceSeconds,
+    MIN_SAFE_RETIREMENT_GRACE_SECONDS,
+    DEFAULT_RETIREMENT_GRACE_SECONDS
 };

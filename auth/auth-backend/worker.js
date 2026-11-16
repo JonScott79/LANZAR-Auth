@@ -17,7 +17,7 @@ const { getAuth } = require('firebase-admin/auth');
 const { getFirestore } = require('firebase-admin/firestore');
 const { bootstrap } = require('./config/bootstrap');
 const { validateReceiptKeyConfiguration } = require('./store');
-const { validateSigningKeyEncryptionConfiguration } = require('./services/signingKeystore');
+const { SigningKeystore, validateSigningKeyEncryptionConfiguration } = require('./services/signingKeystore');
 const { AuditLogService } = require('./services/auditLogService');
 const { PlatformOutboxService } = require('./services/platformOutboxService');
 const { DesiredStateReconciler } = require('./services/desiredStateReconciler');
@@ -47,6 +47,7 @@ const firebaseApp = getApps().length > 0 ? getApps()[0] : initializeApp(firebase
 const db = getFirestore(firebaseApp);
 const authAdmin = getAuth(firebaseApp);
 const auditLogService = new AuditLogService(db);
+const signingKeystore = new SigningKeystore(db);
 
 const pollIntervalMs = Number(process.env.OUTBOX_WORKER_POLL_MS || 5000);
 const leaseDurationMs = Number(process.env.OUTBOX_LEASE_DURATION_MS || 30000);
@@ -54,6 +55,8 @@ const maxAttempts = Number(process.env.OUTBOX_MAX_ATTEMPTS || 5);
 
 const reconcileIntervalMs = Number(process.env.RECONCILE_INTERVAL_MS || 60000);
 const reconcileSweepPollMs = Number(process.env.RECONCILE_SWEEP_POLL_MS || 15000);
+const keyRetirementSweepMs = Number(process.env.KEY_RETIREMENT_SWEEP_MS || 60000);
+const heartbeatIntervalMs = Number(process.env.WORKER_HEARTBEAT_INTERVAL_MS || 30000);
 
 const outboxService = new PlatformOutboxService(db, authAdmin, {
     auditLogService,
@@ -70,12 +73,53 @@ const reconciler = new DesiredStateReconciler(db, authAdmin, {
     maxAttempts
 });
 
+const workerStartedAt = new Date().toISOString();
+
+async function recordWorkerHeartbeat() {
+    try {
+        const nowMs = Date.now();
+        await db.collection('system_worker_health').doc('outbox_worker').set({
+            workerId: outboxService.workerId,
+            reconcilerWorkerId: reconciler.workerId,
+            appEnv: config.appEnv || process.env.APP_ENV || 'development',
+            pid: process.pid,
+            status: 'healthy',
+            startedAt: workerStartedAt,
+            lastHeartbeatAt: new Date(nowMs).toISOString(),
+            lastHeartbeatMs: nowMs
+        }, { merge: true });
+    } catch (err) {
+        console.error('[WORKER HEARTBEAT ERROR]', err.message);
+    }
+}
+
+async function runKeyRetirementSweep() {
+    try {
+        const res = await signingKeystore.retireEligibleKeys({ auditLogService });
+        if (res.retiredKids.length > 0) {
+            console.log(`[KEY RETIREMENT] Retired expired verify_only signing keys: ${res.retiredKids.join(', ')}`);
+        }
+    } catch (err) {
+        console.error('[KEY RETIREMENT ERROR]', err.message);
+    }
+}
+
 console.log(`🚀 LANZAR ID Outbox & Desired-State Worker started (outboxWorker=${outboxService.workerId}, reconciler=${reconciler.workerId})`);
 outboxService.start();
 reconciler.start();
+recordWorkerHeartbeat();
+runKeyRetirementSweep();
+
+const heartbeatTimer = setInterval(recordWorkerHeartbeat, heartbeatIntervalMs);
+if (heartbeatTimer.unref) heartbeatTimer.unref();
+
+const keyRetirementTimer = setInterval(runKeyRetirementSweep, keyRetirementSweepMs);
+if (keyRetirementTimer.unref) keyRetirementTimer.unref();
 
 function shutdown(signal) {
     console.log(`[OUTBOX WORKER] Received ${signal}, stopping gracefully...`);
+    clearInterval(heartbeatTimer);
+    clearInterval(keyRetirementTimer);
     outboxService.stop();
     reconciler.stop();
     process.exit(0);

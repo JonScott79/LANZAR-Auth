@@ -701,9 +701,14 @@ function createAdminRouter({ db, authAdmin, profileService, founderService, sess
 
   router.get('/telemetry', requirePlatformAdmin, async (req, res) => {
     try {
-      const [usersSnap, logsSnap] = await Promise.all([
+      const [usersSnap, logsSnap, outboxDlqSnap, outboxRetrySnap, outboxPendingSnap, recDlqSnap, workerHealthSnap] = await Promise.all([
         db.collection('users').get(),
-        db.collection('security_logs').limit(10).get()
+        db.collection('security_logs').limit(10).get(),
+        db.collection('security_outbox').where('status', '==', 'DEAD_LETTER').get(),
+        db.collection('security_outbox').where('status', '==', 'FAILED_RETRYABLE').get(),
+        db.collection('security_outbox').where('status', '==', 'PENDING_EXTERNAL_AUTH').get(),
+        db.collection('auth_reconciliation').where('status', '==', 'DEAD_LETTER').get(),
+        db.collection('system_worker_health').doc('outbox_worker').get()
       ]);
 
       let totalUsers = usersSnap.size;
@@ -720,9 +725,26 @@ function createAdminRouter({ db, authAdmin, profileService, founderService, sess
         if (d.derivedBadges && d.derivedBadges.length > 0) founderCount++;
       });
 
+      const nowMs = Date.now();
+      let worker = { status: 'unknown', workerId: null, lastHeartbeatAt: null, ageSeconds: null };
+      if (workerHealthSnap.exists) {
+        const wh = workerHealthSnap.data() || {};
+        const lastMs = Number(wh.lastHeartbeatMs || (wh.lastHeartbeatAt ? Date.parse(wh.lastHeartbeatAt) : NaN));
+        const ageSeconds = Number.isFinite(lastMs) ? Math.max(0, Math.floor((nowMs - lastMs) / 1000)) : null;
+        const isHealthy = ageSeconds !== null && ageSeconds <= 90;
+        worker = {
+          status: isHealthy ? 'healthy' : 'stale',
+          workerId: wh.workerId || null,
+          lastHeartbeatAt: wh.lastHeartbeatAt || null,
+          ageSeconds
+        };
+      }
+
+      const deadLetterAlert = outboxDlqSnap.size > 0 || recDlqSnap.size > 0;
+
       return res.json({
-        status: 'nominal',
-        serverTime: new Date().toISOString(),
+        status: deadLetterAlert || worker.status === 'stale' ? 'degraded' : 'nominal',
+        serverTime: new Date(nowMs).toISOString(),
         uptimeSeconds: Math.floor(process.uptime()),
         totalUsers,
         activeUsers,
@@ -730,6 +752,19 @@ function createAdminRouter({ db, authAdmin, profileService, founderService, sess
         mfaEnrolledCount,
         founderCount,
         recentLogsCount: logsSnap.size,
+        outbox: {
+          deadLetterCount: outboxDlqSnap.size,
+          failedRetryableCount: outboxRetrySnap.size,
+          pendingCount: outboxPendingSnap.size
+        },
+        reconciliation: {
+          deadLetterCount: recDlqSnap.size
+        },
+        worker,
+        alerts: {
+          deadLetterPresent: deadLetterAlert,
+          workerStale: worker.status === 'stale'
+        },
         environment: process.env.NODE_ENV || 'development'
       });
     } catch (err) {
