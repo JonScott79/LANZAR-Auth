@@ -1056,7 +1056,7 @@ async function runTestSuite() {
     const res = await fetch(`http://localhost:${port}/api/id/auth/password-reset-complete`, {
       method: 'POST',
       headers: {
-        Origin: 'https://auth-dev.lanzar.me',
+        Origin: 'https://auth.lanzar.me',
         'X-Lanzar-Client': 'id',
         Authorization: `Bearer ${freshIdToken}`,
         'Content-Type': 'application/json'
@@ -1112,7 +1112,7 @@ async function runTestSuite() {
     const res = await fetch(`http://localhost:${port}/api/id/auth/password-reset-complete`, {
       method: 'POST',
       headers: {
-        Origin: 'https://auth-dev.lanzar.me',
+        Origin: 'https://auth.lanzar.me',
         'X-Lanzar-Client': 'id',
         Authorization: `Bearer ${staleToken}`,
         'Content-Type': 'application/json'

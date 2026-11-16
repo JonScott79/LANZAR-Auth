@@ -3,6 +3,14 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
+    {
+      "source": "/nova/.well-known/openid-configuration",
+      "destination": "https://auth-api-nova.lanzar.me/nova/.well-known/openid-configuration"
+    },
+    {
+      "source": "/nova/.well-known/jwks.json",
+      "destination": "https://auth-api-nova.lanzar.me/.well-known/jwks.json"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

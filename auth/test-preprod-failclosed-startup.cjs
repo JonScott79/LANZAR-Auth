@@ -248,7 +248,8 @@ async function runPreprodSecuritySuite() {
     const config = bootstrap(VALID_STAGING_ENV);
     const pass = config.appEnv === 'staging' &&
       config.projectId === 'lanzar-95ae3-dev' &&
-      config.apiBaseUrl === 'https://auth-api-dev.lanzar.me';
+      config.apiBaseUrl === 'https://auth-api-nova.lanzar.me' &&
+      config.oidcIssuer === 'https://auth.lanzar.me/nova';
     recordTest('BOOT-01', 'Valid staging configuration passes bootstrap validation without live network connection', pass);
   } catch (e) {
     recordTest('BOOT-01', 'Valid staging configuration passes bootstrap validation without live network connection', false, e.message);

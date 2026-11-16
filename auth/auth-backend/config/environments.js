@@ -13,6 +13,7 @@ const ENV_CONFIGS = {
     cookieAttributes: 'Path=/; Secure; HttpOnly; SameSite=Lax',
     apiBaseUrl: 'https://auth-api.lanzar.me',
     authHubUrl: 'https://auth.lanzar.me',
+    oidcIssuer: 'https://auth.lanzar.me',
     portalUrl: 'https://id.lanzar.me',
     originMap: {
       'https://pythos.lanzar.me': 'pythos',
@@ -46,8 +47,9 @@ const ENV_CONFIGS = {
     stripeKeyPrefix: 'sk_test_',
     cookieName: '__Host-lanzar_stg_sess',
     cookieAttributes: 'Path=/; Secure; HttpOnly; SameSite=Lax',
-    apiBaseUrl: 'https://auth-api-dev.lanzar.me',
-    authHubUrl: 'https://auth-dev.lanzar.me',
+    apiBaseUrl: 'https://auth-api-nova.lanzar.me',
+    authHubUrl: 'https://auth.lanzar.me/nova',
+    oidcIssuer: 'https://auth.lanzar.me/nova',
     portalUrl: 'https://id-dev.lanzar.me',
     originMap: {
       'https://pythos-dev.lanzar.me': 'pythos',
@@ -57,7 +59,7 @@ const ENV_CONFIGS = {
       'https://id-dev.lanzar.me': 'id_portal',
       'https://portal-dev.lanzar.me': 'mission_control',
       'https://dev.lanzar.me': 'marketing_site',
-      'https://auth-dev.lanzar.me': 'auth_hub'
+      'https://auth.lanzar.me': 'auth_hub'
     },
     continuationAllowlist: [
       'https://id-dev.lanzar.me/',
@@ -80,6 +82,7 @@ const ENV_CONFIGS = {
     cookieAttributes: 'Path=/; HttpOnly; SameSite=Lax',
     apiBaseUrl: 'http://localhost:4001',
     authHubUrl: 'http://localhost:4000',
+    oidcIssuer: 'http://localhost:4001',
     portalUrl: 'http://localhost:5173',
     originMap: {
       'http://localhost:4000': 'auth_hub',

@@ -112,9 +112,11 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
   });
   app.use('/mfa', mfaRouter);
 
+  const resolvedIssuer = (config && config.oidcIssuer) || process.env.OIDC_ISSUER || (config ? config.apiBaseUrl : undefined);
+  const resolvedApiBaseUrl = (config && config.apiBaseUrl) || undefined;
   const oidcTokenService = services.oidcTokenService || (
     signingKeystore
-      ? new OidcTokenService({ signingKeystore, issuer: config ? config.apiBaseUrl : undefined })
+      ? new OidcTokenService({ signingKeystore, issuer: resolvedIssuer, apiBaseUrl: resolvedApiBaseUrl })
       : null
   );
 

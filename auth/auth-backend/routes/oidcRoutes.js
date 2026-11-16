@@ -7,7 +7,7 @@ const { hasScope } = require('../services/oidcTokenService');
 function createOidcRouter({ oidcTokenService, db, clientRegistryService }) {
     const router = express.Router();
 
-    router.get('/.well-known/openid-configuration', (req, res) => {
+    const handleDiscovery = (req, res) => {
         if (!oidcTokenService || typeof oidcTokenService.getDiscoveryDocument !== 'function') {
             return res.status(503).json({
                 error: 'service_unavailable',
@@ -16,6 +16,15 @@ function createOidcRouter({ oidcTokenService, db, clientRegistryService }) {
         }
         res.set('Cache-Control', 'public, max-age=300');
         return res.status(200).json(oidcTokenService.getDiscoveryDocument());
+    };
+
+    router.get('/.well-known/openid-configuration', handleDiscovery);
+    router.get('/nova/.well-known/openid-configuration', (req, res) => {
+        const issuer = oidcTokenService && typeof oidcTokenService.getIssuer === 'function' ? oidcTokenService.getIssuer() : '';
+        if (!issuer.endsWith('/nova')) {
+            return res.status(404).json({ error: 'not_found', error_description: 'NOVA discovery endpoint is only active in NOVA staging.' });
+        }
+        return handleDiscovery(req, res);
     });
 
     router.get('/oauth/userinfo', async (req, res) => {

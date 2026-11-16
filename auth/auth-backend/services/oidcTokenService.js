@@ -10,6 +10,22 @@ const VALID_COMPATIBILITY_MODES = new Set(['legacy_firebase', 'dual', 'oidc']);
 const SUPPORTED_SCOPES = ['openid', 'profile', 'email'];
 
 function resolveDefaultIssuer() {
+    if (process.env.OIDC_ISSUER && process.env.OIDC_ISSUER.trim()) {
+        return process.env.OIDC_ISSUER.trim().replace(/\/+$/, '');
+    }
+    try {
+        const env = resolveEnvironment(process.env);
+        const cfg = getEnvironmentConfig(env);
+        if (cfg && (cfg.oidcIssuer || cfg.apiBaseUrl)) {
+            return cfg.oidcIssuer || cfg.apiBaseUrl;
+        }
+    } catch (_) {
+        // Fallback for isolated unit/test runs without APP_ENV
+    }
+    return 'http://localhost:4001';
+}
+
+function resolveDefaultApiBaseUrl(fallbackIssuer) {
     try {
         const env = resolveEnvironment(process.env);
         const cfg = getEnvironmentConfig(env);
@@ -19,7 +35,7 @@ function resolveDefaultIssuer() {
     } catch (_) {
         // Fallback for isolated unit/test runs without APP_ENV
     }
-    return process.env.OIDC_ISSUER || 'http://localhost:4001';
+    return fallbackIssuer;
 }
 
 function normalizeScope(rawScope) {
@@ -40,30 +56,47 @@ function hasScope(scopeStr, target) {
 }
 
 class OidcTokenService {
-    constructor({ signingKeystore, issuer } = {}) {
+    constructor({ signingKeystore, issuer, apiBaseUrl } = {}) {
         if (!signingKeystore || typeof signingKeystore.signJwt !== 'function' || typeof signingKeystore.verifyJwt !== 'function') {
             throw new Error('OidcTokenService requires a valid SigningKeystore instance.');
         }
         this.signingKeystore = signingKeystore;
-        this.issuer = (typeof issuer === 'string' && issuer.trim()) ? issuer.replace(/\/+$/, '') : resolveDefaultIssuer();
+        this.issuer = (typeof issuer === 'string' && issuer.trim()) ? issuer.trim().replace(/\/+$/, '') : resolveDefaultIssuer();
+        this.apiBaseUrl = (typeof apiBaseUrl === 'string' && apiBaseUrl.trim())
+            ? apiBaseUrl.trim().replace(/\/+$/, '')
+            : resolveDefaultApiBaseUrl(this.issuer);
+
+        let parsedIssuer;
+        try {
+            parsedIssuer = new URL(this.issuer);
+        } catch (_) {
+            throw new Error(`Invalid OIDC issuer URL: "${this.issuer}"`);
+        }
+        if (parsedIssuer.search || parsedIssuer.hash || parsedIssuer.pathname.includes('/NOVA')) {
+            throw new Error(`Invalid OIDC issuer format (no query/fragment/uppercase /NOVA allowed): "${this.issuer}"`);
+        }
     }
 
     getIssuer() {
         return this.issuer;
     }
 
+    getApiBaseUrl() {
+        return this.apiBaseUrl;
+    }
+
     getUserinfoAudience() {
-        return `${this.issuer}/oauth/userinfo`;
+        return `${this.apiBaseUrl}/oauth/userinfo`;
     }
 
     getDiscoveryDocument() {
-        const iss = this.issuer;
+        const api = this.apiBaseUrl;
         return {
-            issuer: iss,
-            authorization_endpoint: `${iss}/oauth/authorize`,
-            token_endpoint: `${iss}/oauth/token`,
-            userinfo_endpoint: `${iss}/oauth/userinfo`,
-            jwks_uri: `${iss}/.well-known/jwks.json`,
+            issuer: this.issuer,
+            authorization_endpoint: `${api}/oauth/authorize`,
+            token_endpoint: `${api}/oauth/token`,
+            userinfo_endpoint: `${api}/oauth/userinfo`,
+            jwks_uri: `${api}/.well-known/jwks.json`,
             response_types_supported: ['code'],
             subject_types_supported: ['public'],
             id_token_signing_alg_values_supported: ['RS256'],

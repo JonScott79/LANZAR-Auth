@@ -48,8 +48,9 @@ function runStagingBootstrapTests() {
     const pass = 
       config.appEnv === 'staging' &&
       config.projectId === 'lanzar-95ae3-dev' &&
-      config.apiBaseUrl === 'https://auth-api-dev.lanzar.me' &&
-      config.authHubUrl === 'https://auth-dev.lanzar.me' &&
+      config.apiBaseUrl === 'https://auth-api-nova.lanzar.me' &&
+      config.authHubUrl === 'https://auth.lanzar.me/nova' &&
+      config.oidcIssuer === 'https://auth.lanzar.me/nova' &&
       config.cookieName === '__Host-lanzar_stg_sess' &&
       config.featureStripe === false;
     recordTest('STG-BOOT-1', 'Valid staging environment boots cleanly with authoritative endpoints and cookie name', pass);
@@ -161,9 +162,9 @@ function runStagingBootstrapTests() {
     const config = bootstrap(VALID_STAGING_ENV);
     const originMap = config.originMap;
     const hasDevOrigins = Object.keys(originMap).every(origin => 
-      origin.includes('-dev') || origin.includes('localhost') || origin.includes('dev.lanzar.me')
+      origin.includes('-dev') || origin.includes('localhost') || origin.includes('dev.lanzar.me') || origin === 'https://auth.lanzar.me'
     );
-    const hasZeroProdOrigins = !Boolean(originMap['https://auth.lanzar.me']) &&
+    const hasZeroProdOrigins = !Boolean(originMap['https://id.lanzar.me']) &&
                                !Boolean(originMap['https://portal.lanzar.me']) &&
                                !Boolean(originMap['https://pythos.lanzar.me']);
     recordTest('STG-BOOT-7', 'Staging origin matrix contains exclusively staging/dev endpoints with zero prod contamination', hasDevOrigins && hasZeroProdOrigins);

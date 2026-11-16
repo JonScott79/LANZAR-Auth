@@ -267,9 +267,39 @@ function bootstrap(env = process.env, options = { exitOnError: false }) {
     fatal('FEATURE_STRIPE must be explicitly "enabled" or "disabled"');
   }
 
+  // 9. OIDC Issuer validation (decoupled from apiBaseUrl for NOVA staging)
+  const rawIssuer = (env.OIDC_ISSUER || spec.oidcIssuer || spec.apiBaseUrl || '').trim().replace(/\/+$/, '');
+  if (!rawIssuer) {
+    fatal(`OIDC_ISSUER is required for APP_ENV=${appEnv}`);
+  }
+  if (appEnv === 'staging' || appEnv === 'production') {
+    let parsedIssuer;
+    try {
+      parsedIssuer = new URL(rawIssuer);
+    } catch (_) {
+      fatal(`OIDC_ISSUER must be a valid URL in APP_ENV=${appEnv}, got "${rawIssuer}"`);
+    }
+    if (parsedIssuer.protocol !== 'https:') {
+      fatal(`OIDC_ISSUER must use https:// in APP_ENV=${appEnv}, got "${rawIssuer}"`);
+    }
+    if (parsedIssuer.search || parsedIssuer.hash) {
+      fatal(`OIDC_ISSUER must not contain query strings or fragments in APP_ENV=${appEnv}`);
+    }
+    if (parsedIssuer.pathname.includes('/NOVA')) {
+      fatal('OIDC_ISSUER path must use lowercase /nova, never uppercase /NOVA');
+    }
+    if (appEnv === 'staging' && (rawIssuer === 'https://auth.lanzar.me' || rawIssuer === 'https://auth-api.lanzar.me')) {
+      fatal('Production OIDC_ISSUER cannot be used in APP_ENV=staging (NOVA)');
+    }
+    if (appEnv === 'production' && (parsedIssuer.pathname.toLowerCase().includes('/nova') || parsedIssuer.hostname.toLowerCase().includes('nova'))) {
+      fatal('NOVA OIDC_ISSUER cannot be used in APP_ENV=production');
+    }
+  }
+
   // Return frozen validated configuration
   return Object.freeze({
     ...spec,
+    oidcIssuer: rawIssuer,
     sessionSigningSecret: env.SESSION_SIGNING_SECRET,
     featureStripe: featureStripe === 'enabled',
     stripeSecretKey: env.STRIPE_SECRET_KEY || null,
