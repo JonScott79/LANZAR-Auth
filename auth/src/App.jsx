@@ -11,10 +11,26 @@ const ALLOWED_DOMAINS = [
   'localhost' // For local development testing
 ]
 
+const STAGING_ALLOWED_HOSTS = new Set([
+  'threadline-nova.netlify.app'
+])
+
+function isStagingHub() {
+  const env = (import.meta.env.VITE_APP_ENV || '').toLowerCase()
+  const host = typeof window !== 'undefined' ? window.location.hostname : ''
+  return env === 'staging' || host === 'lanzar-auth-nova.netlify.app'
+}
+
 function isAllowedRedirect(uri) {
   try {
     const url = new URL(uri)
-    return ALLOWED_DOMAINS.some(domain => url.hostname === domain || url.hostname.endsWith('.' + domain))
+    if (ALLOWED_DOMAINS.some(domain => url.hostname === domain || url.hostname.endsWith('.' + domain))) {
+      return true
+    }
+    if (isStagingHub() && STAGING_ALLOWED_HOSTS.has(url.hostname.toLowerCase())) {
+      return true
+    }
+    return false
   } catch (e) {
     return false
   }
@@ -67,6 +83,8 @@ function App() {
       const idToken = await firebaseUser.getIdToken(true)
       const authBackendUrl = getAuthApiUrl()
 
+      const scopeParam = params.get('scope')
+      const nonceParam = params.get('nonce')
       const response = await fetch(authBackendUrl + '/authorize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -77,6 +95,8 @@ function App() {
           state,
           code_challenge: codeChallenge,
           code_challenge_method: codeChallengeMethod,
+          ...(scopeParam ? { scope: scopeParam } : {}),
+          ...(nonceParam ? { nonce: nonceParam } : {}),
           mfa_proof: mfaProof
         })
       })
