@@ -20,6 +20,7 @@ const {
 const { recordSecurityEvent } = require('../auditService');
 const {
   mfaVerifyRateLimitMiddleware,
+  oauthAuthorizeLimiter,
   recordMfaFailure,
   clearMfaFailures,
   getClientIp
@@ -63,7 +64,7 @@ function createMfaRouter({ db, authAdmin, isUserAdmin }) {
     return null;
   };
 
-  router.post('/totp/setup', async (req, res) => {
+  router.post('/totp/setup', oauthAuthorizeLimiter, async (req, res) => {
     try {
       const idToken = extractIdToken(req);
       if (!idToken) return res.status(400).json({ error: 'missing_token', error_description: 'idToken is required.' });
@@ -107,7 +108,7 @@ function createMfaRouter({ db, authAdmin, isUserAdmin }) {
     }
   });
 
-  router.post('/totp/enable', async (req, res) => {
+  router.post('/totp/enable', oauthAuthorizeLimiter, async (req, res) => {
     try {
       const idToken = extractIdToken(req);
       const code = req.body && req.body.code;

@@ -13,7 +13,7 @@ const scryptAsync = util.promisify(crypto.scrypt);
 function createAccountRouter({ db, authAdmin }) {
   const router = express.Router();
 
-  async function reconcileCustomerAccount({ uid, email, displayName, businessName, dispatchOptIn }) {
+  async function reconcileCustomerAccount({ uid, email, displayName, businessName, dispatchOptIn, emailVerified = false }) {
     if (!uid || !email) return;
     const normalizedEmail = email.trim().toLowerCase();
     const customerRef = db.collection('customers').doc(uid);
@@ -40,6 +40,11 @@ function createAccountRouter({ db, authAdmin }) {
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp()
       });
+    } else if (Boolean(emailVerified) && !userSnap.data().emailVerified) {
+      await userRef.update({
+        emailVerified: true,
+        updatedAt: FieldValue.serverTimestamp()
+      });
     }
 
     if (!userSnap.exists) {
@@ -48,7 +53,7 @@ function createAccountRouter({ db, authAdmin }) {
         tenantId: 'lanzar',
         displayName: resolvedName,
         email: normalizedEmail,
-        emailVerified: false,
+        emailVerified: Boolean(emailVerified),
         phoneNumber: null,
         phoneVerified: false,
         role: 'customer',
@@ -57,6 +62,11 @@ function createAccountRouter({ db, authAdmin }) {
         derivedBadges: [],
         services: ['portal', 'tickets'],
         createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      });
+    } else if (Boolean(emailVerified) && !userSnap.data().emailVerified) {
+      await userRef.update({
+        emailVerified: true,
         updatedAt: FieldValue.serverTimestamp()
       });
     }
@@ -79,7 +89,7 @@ function createAccountRouter({ db, authAdmin }) {
     }
   }
 
-  router.post('/register', async (req, res) => {
+  router.post('/register', oauthAuthorizeLimiter, async (req, res) => {
     try {
       const { email, password, fullName, businessName, dispatchOptIn } = req.body;
       if (!email || !password || !fullName) {
@@ -140,7 +150,7 @@ function createAccountRouter({ db, authAdmin }) {
     }
   });
 
-  router.post('/provision', async (req, res) => {
+  router.post('/provision', oauthAuthorizeLimiter, async (req, res) => {
     try {
       const { idToken, fullName, businessName, dispatchOptIn } = req.body;
       if (!idToken) return res.status(400).json({ error: 'missing_id_token' });
@@ -151,7 +161,8 @@ function createAccountRouter({ db, authAdmin }) {
         email: decoded.email,
         displayName: fullName || decoded.name,
         businessName: businessName || '',
-        dispatchOptIn: Boolean(dispatchOptIn)
+        dispatchOptIn: Boolean(dispatchOptIn),
+        emailVerified: Boolean(decoded.email_verified)
       });
 
       return res.json({ success: true, uid: decoded.uid });
@@ -160,7 +171,7 @@ function createAccountRouter({ db, authAdmin }) {
     }
   });
 
-  router.post('/password/forgot', async (req, res) => {
+  router.post('/password/forgot', oauthAuthorizeLimiter, async (req, res) => {
     try {
       const { email } = req.body;
       if (!email) return res.status(400).json({ error: 'missing_email' });

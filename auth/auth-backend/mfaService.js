@@ -51,7 +51,24 @@ function getMfaHmacSecret(env = process.env) {
     return DEV_ONLY_FALLBACK_MFA_SECRET;
 }
 
-const MFA_ENCRYPTION_KEY = process.env.MFA_ENCRYPTION_KEY || crypto.createHash('sha256').update('lanzar_totp_aes_pepper_2026').digest(); // 32 bytes
+const DEV_ONLY_FALLBACK_MFA_ENC_KEY = crypto.createHash('sha256').update('lanzar_totp_aes_pepper_2026').digest(); // 32 bytes
+
+function getMfaEncryptionKey(env = process.env) {
+    const effectiveEnv = resolveEnvironment(env);
+    const rawKey = env.MFA_ENCRYPTION_KEY;
+
+    if (effectiveEnv === 'staging' || effectiveEnv === 'production') {
+        if (!rawKey || Buffer.byteLength(rawKey, 'utf8') < 32) {
+            throw new Error(`[MFA CONFIG FATAL] MFA_ENCRYPTION_KEY (>= 32 bytes) must be explicitly configured in APP_ENV=${effectiveEnv}`);
+        }
+        return rawKey;
+    }
+
+    if (rawKey) {
+        return rawKey;
+    }
+    return DEV_ONLY_FALLBACK_MFA_ENC_KEY;
+}
 
 // Cache of consumed (uid + timeStep) to prevent replay of the same 6-digit code within its 30-second validity window
 // Map<string, number> where key = `${uid}_${timeStep}`, value = expiry timestamp
@@ -76,8 +93,9 @@ setInterval(cleanExpiredCacheEntries, 60000).unref(); // Clean every minute with
 // AES-256-GCM Encryption at Rest
 // ==========================================
 function encryptTotpSecret(plainBase32) {
+    const key = getMfaEncryptionKey();
     const iv = crypto.randomBytes(12);
-    const cipher = crypto.createCipheriv('aes-256-gcm', MFA_ENCRYPTION_KEY, iv);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
     let encrypted = cipher.update(plainBase32, 'utf8', 'hex');
     encrypted += cipher.final('hex');
     const tag = cipher.getAuthTag();
@@ -98,7 +116,8 @@ function decryptTotpSecret(encryptedObj) {
     const { encryptedSecret, iv, tag } = encryptedObj;
     if (!encryptedSecret || !iv || !tag) return null;
 
-    const decipher = crypto.createDecipheriv('aes-256-gcm', MFA_ENCRYPTION_KEY, Buffer.from(iv, 'hex'));
+    const key = getMfaEncryptionKey();
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'hex'));
     decipher.setAuthTag(Buffer.from(tag, 'hex'));
     let decrypted = decipher.update(encryptedSecret, 'hex', 'utf8');
     decrypted += decipher.final('utf8');

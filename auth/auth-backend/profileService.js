@@ -166,17 +166,23 @@ class ProfileService {
         // 2. Wipe /mfa_factors
         await this.db.collection('mfa_factors').doc(uid).delete().catch(() => {});
 
-        // 3. Purge sessions
-        const sessionsSnap = await this.db.collection('users').doc(uid).collection('sessions').get();
+        // 3. Purge sessions, central_sessions, and session_slots
+        const userRef = this.db.collection('users').doc(uid);
+        const [sessionsSnap, centralSnap, slotsSnap, foundersSnap] = await Promise.all([
+            userRef.collection('sessions').get(),
+            userRef.collection('central_sessions').get(),
+            userRef.collection('session_slots').get(),
+            userRef.collection('founders').get()
+        ]);
         const batch = this.db.batch();
         sessionsSnap.forEach(d => batch.delete(d.ref));
-
-        // 4. Purge founders
-        const foundersSnap = await this.db.collection('users').doc(uid).collection('founders').get();
+        centralSnap.forEach(d => batch.delete(d.ref));
+        slotsSnap.forEach(d => batch.delete(d.ref));
         foundersSnap.forEach(d => batch.delete(d.ref));
 
-        // 5. Delete users doc
-        batch.delete(this.db.collection('users').doc(uid));
+        // 4. Delete customers and users docs
+        batch.delete(this.db.collection('customers').doc(uid));
+        batch.delete(userRef);
         await batch.commit();
 
         await recordSecurityEvent(this.db, {

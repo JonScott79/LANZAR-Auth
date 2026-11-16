@@ -3,7 +3,8 @@ import {
   signInWithEmail, 
   sendPasswordReset, 
   signInWithGoogle, 
-  registerWithEmail 
+  registerWithEmail,
+  sendEmailVerificationToUser 
 } from '../firebase/auth.js'
 import { getAuthApiUrl } from '../config/env.js'
 import TotpQrCode from '../components/TotpQrCode.jsx'
@@ -200,6 +201,9 @@ export default function Login({
     try {
       // 1. Create user in Firebase Auth
       const newUser = await registerWithEmail(email, password, fullName.trim())
+      sendEmailVerificationToUser(newUser).catch((e) => {
+        console.warn('[AUTH] Email verification dispatch warning:', e?.message || e)
+      })
       const idToken = await newUser.getIdToken()
 
       // 2. Call server-controlled provisioning endpoint

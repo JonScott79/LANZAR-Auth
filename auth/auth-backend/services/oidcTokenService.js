@@ -50,6 +50,28 @@ function normalizeScope(rawScope) {
     return unique.length > 0 ? unique.join(' ') : 'openid profile email';
 }
 
+function validateAndNormalizeScope(rawScope, clientAllowedScopes = null) {
+    const allowedSet = new Set(
+        Array.isArray(clientAllowedScopes) && clientAllowedScopes.length > 0
+            ? clientAllowedScopes.filter(s => SUPPORTED_SCOPES.includes(s))
+            : SUPPORTED_SCOPES
+    );
+    if (typeof rawScope !== 'string' || !rawScope.trim()) {
+        const defaults = ['openid', 'profile', 'email'].filter(s => allowedSet.has(s));
+        return { valid: true, scope: defaults.length > 0 ? defaults.join(' ') : 'openid' };
+    }
+    const requested = Array.from(new Set(rawScope.trim().split(/\s+/).filter(Boolean)));
+    const unsupported = requested.filter(s => !allowedSet.has(s));
+    if (unsupported.length > 0) {
+        return {
+            valid: false,
+            error: 'invalid_scope',
+            error_description: `Unsupported or unauthorized scope(s): ${unsupported.join(', ')}`
+        };
+    }
+    return { valid: true, scope: requested.join(' ') };
+}
+
 function hasScope(scopeStr, target) {
     if (typeof scopeStr !== 'string') return false;
     return scopeStr.split(/\s+/).includes(target);
@@ -331,5 +353,6 @@ module.exports = {
     VALID_COMPATIBILITY_MODES,
     SUPPORTED_SCOPES,
     normalizeScope,
+    validateAndNormalizeScope,
     hasScope
 };

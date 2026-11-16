@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { signOutUser, sendPasswordReset } from '../firebase/auth.js'
+import { signOutUser, sendPasswordReset, sendEmailVerificationToUser } from '../firebase/auth.js'
 import { getAuthApiUrl } from '../config/env.js'
 import TotpQrCode from './TotpQrCode.jsx'
 import './MyLanzarAccount.css'
@@ -259,6 +259,17 @@ export default function MyLanzarAccount({ user, onClose = null }) {
     }
   }
 
+  // Email Verification Trigger
+  const handleResendVerificationEmail = async () => {
+    try {
+      if (!user) throw new Error('No active authenticated user.')
+      await sendEmailVerificationToUser(user)
+      notify('Verification email dispatched to your inbox.', 'info')
+    } catch (err) {
+      notify(err.message || 'Failed to send verification email', 'error')
+    }
+  }
+
   // Password Recovery Trigger
   const handleTriggerPasswordReset = async () => {
     try {
@@ -437,7 +448,7 @@ export default function MyLanzarAccount({ user, onClose = null }) {
                   {profile?.emailVerified ? '● VERIFIED' : '○ PENDING VERIFICATION'}
                 </span>
                 {!profile?.emailVerified && (
-                  <button className="link-action" onClick={handleTriggerPasswordReset}>Resend Link</button>
+                  <button className="link-action" onClick={handleResendVerificationEmail}>Resend Link</button>
                 )}
               </div>
               <div className="status-card">

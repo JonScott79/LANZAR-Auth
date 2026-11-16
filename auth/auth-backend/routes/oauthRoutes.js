@@ -8,9 +8,9 @@ const { createMfaSignedToken, verifyMfaSignedToken } = require('../mfaService');
 const { oauthAuthorizeLimiter, oauthExchangeLimiter } = require('../middleware/rateLimiter');
 const { hashAuthorizationCode, generateRefreshToken } = require('../store');
 
-const { ACCESS_TOKEN_TTL_SECONDS, hasScope, normalizeScope } = require('../services/oidcTokenService');
+const { ACCESS_TOKEN_TTL_SECONDS, hasScope, normalizeScope, validateAndNormalizeScope } = require('../services/oidcTokenService');
 
-function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdmin, reconcileCustomerAccount, oidcTokenService, clientRegistryService, getClientOverride }) {
+function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdmin, reconcileCustomerAccount, oidcTokenService, clientRegistryService, getClientOverride, authHubUrl }) {
   const router = express.Router();
   const resolveClientAsync = async (id) => {
     if (typeof getClientOverride === 'function') {
@@ -22,6 +22,66 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
     }
     return getClient(id);
   };
+
+  // Standard OIDC authorization_endpoint (GET /oauth/authorize & GET /authorize)
+  // Validates OAuth/PKCE parameters upfront and redirects to the Auth Hub UI.
+  router.get('/authorize', oauthAuthorizeLimiter, async (req, res) => {
+    try {
+      const { client_id, redirect_uri, response_type, state, code_challenge, code_challenge_method, scope, nonce } = req.query || {};
+
+      if (response_type !== undefined && response_type !== 'code') {
+        return res.status(400).json({ error: 'unsupported_response_type', error_description: 'Only response_type=code is supported.' });
+      }
+      if (!client_id || !redirect_uri || !state || !code_challenge) {
+        return res.status(400).json({ error: 'invalid_request', error_description: 'Missing required authorization parameters (client_id, redirect_uri, state, code_challenge).' });
+      }
+      if (code_challenge_method !== 'S256') {
+        return res.status(400).json({ error: 'invalid_request', error_description: 'code_challenge_method is required and must be S256.' });
+      }
+      if (nonce !== undefined && (typeof nonce !== 'string' || nonce.length === 0 || nonce.length > 256)) {
+        return res.status(400).json({ error: 'invalid_request', error_description: 'Invalid nonce parameter.' });
+      }
+
+      const client = await resolveClientAsync(client_id);
+      if (!client || !client.enabled) {
+        return res.status(400).json({ error: 'invalid_client', error_description: 'Unknown or disabled client.' });
+      }
+      const isAuthorized = clientRegistryService && typeof clientRegistryService.isRedirectUriAuthorized === 'function'
+        ? clientRegistryService.isRedirectUriAuthorized(client, redirect_uri)
+        : (Array.isArray(client.redirectUris) && client.redirectUris.includes(redirect_uri));
+      if (!isAuthorized) {
+        return res.status(400).json({ error: 'invalid_request', error_description: 'Unauthorized redirect URI.' });
+      }
+
+      const scopeValidation = validateAndNormalizeScope(scope, client.allowedScopes);
+      if (!scopeValidation.valid) {
+        return res.status(400).json({ error: scopeValidation.error, error_description: scopeValidation.error_description });
+      }
+
+      const targetHub = (typeof authHubUrl === 'string' && authHubUrl.trim())
+        ? authHubUrl.trim().replace(/\/+$/, '')
+        : ((oidcTokenService && typeof oidcTokenService.getIssuer === 'function') ? oidcTokenService.getIssuer().replace(/\/nova$/, '') : '');
+      if (!targetHub) {
+        return res.status(500).json({ error: 'server_error', error_description: 'Auth Hub URL is not configured.' });
+      }
+
+      const hubUrl = new URL(targetHub);
+      hubUrl.searchParams.set('client_id', String(client_id));
+      hubUrl.searchParams.set('redirect_uri', String(redirect_uri));
+      hubUrl.searchParams.set('code_challenge', String(code_challenge));
+      hubUrl.searchParams.set('code_challenge_method', 'S256');
+      hubUrl.searchParams.set('state', String(state));
+      hubUrl.searchParams.set('scope', scopeValidation.scope);
+      if (typeof nonce === 'string' && nonce) {
+        hubUrl.searchParams.set('nonce', nonce);
+      }
+
+      return res.redirect(302, hubUrl.toString());
+    } catch (error) {
+      console.error('[AUTH GET /authorize ERROR]', error);
+      return res.status(500).json({ error: 'server_error', error_description: error.message });
+    }
+  });
 
   router.post('/authorize', oauthAuthorizeLimiter, async (req, res) => {
     try {
@@ -61,6 +121,11 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
         return res.status(400).json({ error: 'invalid_request', error_description: 'Invalid nonce parameter' });
       }
 
+      const scopeValidation = validateAndNormalizeScope(scope, client.allowedScopes);
+      if (!scopeValidation.valid) {
+        return res.status(400).json({ error: scopeValidation.error, error_description: scopeValidation.error_description });
+      }
+
       const decodedToken = await authAdmin.verifyIdToken(idToken, true);
       const uid = decodedToken.uid;
       const email = decodedToken.email;
@@ -77,7 +142,8 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
           email,
           displayName: decodedToken.name,
           businessName: '',
-          dispatchOptIn: false
+          dispatchOptIn: false,
+          emailVerified: Boolean(decodedToken.email_verified)
         });
       }
 
@@ -121,7 +187,7 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
         codeChallenge: code_challenge,
         codeChallengeMethod: code_challenge_method,
         tenantId: client.tenantId || 'lanzar',
-        scope: typeof scope === 'string' && scope.trim() ? normalizeScope(scope) : 'openid profile email',
+        scope: scopeValidation.scope,
         nonce: typeof nonce === 'string' && nonce ? nonce : null,
         userClaims: {
           email: decodedToken.email ?? null,

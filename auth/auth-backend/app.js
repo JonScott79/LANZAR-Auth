@@ -134,7 +134,8 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
     isUserAdmin: authMiddleware.isUserAdmin,
     reconcileCustomerAccount,
     oidcTokenService,
-    clientRegistryService
+    clientRegistryService,
+    authHubUrl: config ? config.authHubUrl : undefined
   });
   app.use('/oauth', oauthRouter);
   app.use('/', oauthRouter);
