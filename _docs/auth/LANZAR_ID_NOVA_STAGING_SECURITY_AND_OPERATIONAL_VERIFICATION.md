@@ -127,20 +127,39 @@ Executed after commit `2f22fbf` via `nova_live_verify_extended.mjs` against live
   2. `admins` (`COLLECTION`): `email ASC`, `active ASC` (`authMiddleware.js:16-17`)
   3. `sessions` (`COLLECTION`): `centralSessionId ASC`, `revoked ASC` (`centralSessionService.js:332-333`)
 - **`security_outbox` Index Verification:** `platformOutboxService.js:560` executes `.where('type', '==', 'platform_admin_cross_service').limit(limit * 2)`. Because it uses a single-field equality filter with no `orderBy`, Firestore's automatic single-field index satisfies it without a composite index.
-- **TTL Policy Analysis (Derived from Code):**
-  - `oauth_codes.expiresAt` (`auth/auth-backend/store.js:604,630`): Stored as a JS `Date` (Firestore `Timestamp`) -> **compatible with Firestore native TTL**.
-  - `admin_idempotency.expiresAt` (`adminRoutes.js:269,517`) & `users/{uid}/sessions.expiresAt` (`sessionService.js:80`): Stored as ISO-8601 strings; `users/{uid}/central_sessions` (`centralSessionService.js:64-65`): Stored as numeric epoch seconds. Native Firestore TTL ignores non-Timestamp fields; converting those to Firestore `Timestamp` in a future schema pass would allow native TTL cleanup there as well.
+- **TTL Policy Analysis (Derived from `auth/auth-backend/` Codebase):**
+  - **`authorization_codes.expiresAt` (`auth/auth-backend/store.js:576, 604, 630`):** `FirestoreAuthorizationCodeStore` writes `expiresAt: new Date(opTime + 600000)` (10-minute lifetime) into collection `authorization_codes` as a **native Firestore `Timestamp`**. This is the **only** collection currently compatible with Firestore native TTL without schema migration (`PENDING — BILLING ACTIVATION` / requires `gcloud` or GCP Console because `firebase-tools` does not expose a TTL CLI command).
+  - **Other Expiration Fields (Not TTL-Compatible Without Schema Migration):**
+    - `tenants/{tenantId}/token_families.expiresAt` (`oauthRoutes.js:278`): ISO-8601 string (`expiresAt.toISOString()`).
+    - `users/{uid}/sessions.expiresAt`: ISO-8601 string in `oauthRoutes.js:257` & `sessionService.js:80`; numeric epoch seconds in `centralSessionService.js:200`.
+    - `users/{uid}/central_sessions` (`centralSessionService.js:64-65`): `absoluteExpiresAt` and `idleExpiresAt` stored as numeric epoch seconds.
+    - `admin_idempotency.expiresAt` (`adminRoutes.js:269, 517`): ISO-8601 string (`new Date(...).toISOString()`).
+  - Firestore native TTL silently ignores string and numeric fields; **do not** create TTL policies on those fields without an explicit dual-read/Timestamp migration plan.
 - **Security Rules:** `firestore.rules` compiled and deployed on `lanzar-95ae3-dev`; live-verified via `NOVA-LIVE-17` (`403` on direct client reads of `admins`, `system_signing_keys`, `security_outbox`).
 
 ---
 
 ## 8. Backup, PITR, and Recovery Configuration
 
-- Current state of `projects/lanzar-95ae3-dev/databases/(default)`:
-  - `Point In Time Recovery`: `POINT_IN_TIME_RECOVERY_DISABLED`
-  - `Delete Protection State`: `DELETE_PROTECTION_DISABLED`
-  - `Backup Schedules`: None
-- **Blocker:** Running `firebase firestore:databases:update` returned HTTP `403`: *"This API method requires billing to be enabled. Please enable billing on project lanzar-95ae3-dev."* PITR, scheduled backups, and native TTL policies all require the Firebase **Blaze (pay-as-you-go)** plan.
+- **Current State of `projects/lanzar-95ae3-dev/databases/(default)`:**
+  - `Point In Time Recovery`: `POINT_IN_TIME_RECOVERY_DISABLED` — **PENDING — BILLING ACTIVATION**
+  - `Delete Protection State`: `DELETE_PROTECTION_DISABLED` — **PENDING — BILLING ACTIVATION**
+  - `Backup Schedules`: None — **PENDING — BILLING ACTIVATION**
+- **Blocker:** `firebase firestore:databases:update` returned HTTP `403`: *"This API method requires billing to be enabled. Please enable billing on project lanzar-95ae3-dev."*
+- **Validated Activation Commands (Run After Blaze Billing Is Enabled):**
+  ```bash
+  # 1. Enable PITR and Delete Protection (PENDING — BILLING ACTIVATION)
+  npx firebase-tools firestore:databases:update "(default)" --point-in-time-recovery ENABLED --delete-protection ENABLED --project lanzar-95ae3-dev
+
+  # 2. Create Daily Backup Schedule with 7-day Retention (PENDING — BILLING ACTIVATION)
+  npx firebase-tools firestore:backups:schedules:create --database "(default)" --recurrence DAILY --retention 7d --project lanzar-95ae3-dev
+  ```
+- **NOVA Staging Restore Procedure (Runbook):**
+  1. List available backups: `npx firebase-tools firestore:backups:list --project lanzar-95ae3-dev`.
+  2. Restore into a new recovery database (Firestore does not overwrite `(default)` in-place):
+     `npx firebase-tools firestore:databases:restore -d nova-restore-<date> -b <backup-resource-name> --project lanzar-95ae3-dev`
+  3. Verify restored `system_signing_keys`, `admins`, `tenants`, and `users` collections before switching or exporting/importing back into `(default)`.
+  4. Note: `system_signing_keys` private keys remain encrypted with NOVA's `KEYSTORE_MASTER_SECRET`; Railway `lanzar-id-nova-api` env vars must retain the matching `KEYSTORE_MASTER_SECRET` to decrypt restored keys.
 
 ---
 
@@ -179,38 +198,73 @@ Executed after commit `2f22fbf` via `nova_live_verify_extended.mjs` against live
 
 ---
 
-## 13. Known Limitations and Unresolved Risks
+## 13. Distributed Rate Limiting — Architecture Evaluation
 
-1. **Per-Instance Rate Limiting (`auth/auth-backend/middleware/rateLimiter.js`):**
-   - Uses a process-local `Map` (`MAX_ENTRIES = 10000`) for `oauthAuthorizeLimiter`, `oauthExchangeLimiter`, `phoneDispatchLimiter`, and `mfaVerifyRateLimitMiddleware`.
-   - **Limitation:** Acceptable while `lanzar-id-nova-api` runs as a single Railway replica, but **not distributed** across horizontal replicas.
-   - **Options & Recommendation:**
-     - *Option A (Recommended for Production/Multi-Replica):* Provision managed Redis (e.g., Upstash / Railway Redis) and swap `rateLimitStore` for an atomic Redis sliding-window/Lua script store.
-     - *Option B (Edge Layer):* Enforce IP-based rate limiting at Cloudflare / WAF in front of `auth-api-nova.lanzar.me` / `auth-api.lanzar.me`, keeping in-memory per-UID MFA throttling or pairing with Redis.
-     - *Not Recommended:* Using Firestore per-request for rate limiting (adds latency, cost, and hot-document contention).
-2. **Firestore Blaze-Dependent Features:** PITR, Delete Protection, Daily Backup Schedules, and `oauth_codes.expiresAt` TTL are blocked until billing is enabled on `lanzar-95ae3-dev`.
+`auth/auth-backend/middleware/rateLimiter.js` uses a process-local `Map` (`MAX_ENTRIES = 10000`, 60s cleanup timer) and Railway's `X-Real-IP` (validated with `net.isIP()`):
+- `oauthAuthorizeLimiter`: 20 req / 1 min per IP
+- `oauthExchangeLimiter`: 20 req / 1 min per IP
+- `phoneDispatchLimiter`: 3 req / 15 min per IP and per normalized phone number
+- `mfaVerifyRateLimitMiddleware`: 5 failures / 15 min per `(uid, ip)` and 15 failures / 15 min per `ip`
+
+| Dimension | Option A — Managed Redis | Option B — Edge / WAF Rate Limiting | Option C — Hybrid (Recommended Pre-Launch) |
+|---|---|---|---|
+| **Mechanism** | Shared Redis (`INCR`/`EXPIRE` or Lua sliding window) across all Railway API replicas | Cloudflare/WAF rate-limiting rules in front of `auth-api-nova.lanzar.me` (Netlify Edge only proxies `/nova/.well-known/*`, not API routes) | Edge/WAF for volumetric & IP-level `/oauth/*` floods + Redis (or single-instance `Map` until >1 replica) for per-UID MFA & per-phone SMS limits |
+| **Security Implications** | Strong atomic counters for IP, UID (`mfa_fail:acc_ip`), and phone (`phone_dispatch_num`) across replicas | Cannot enforce per-UID MFA failure tracking or per-phone SMS throttling (JSON body inspection & state unavailable at standard edge rules) | Full defense-in-depth: volumetric attacks dropped at edge before hitting Node/Firestore; account/MFA/SMS abuse enforced atomically in app |
+| **Operational Complexity** | Medium (Redis client, TLS, failover/timeout policy) | Low–Medium (requires DNS proxy cutover to Cloudflare WAF in front of Railway) | Medium (combines edge WAF rules + app limiter) |
+| **Cost Estimate** | ~\$0–\$10/mo (Upstash pay-as-you-go free tier or Railway Redis) | \$0–\$20/mo (Cloudflare Free/Pro) | \$0–\$20/mo depending on tier |
+| **Failure Modes** | Redis outage -> must choose fail-open (degrade to in-memory) vs fail-closed on `/mfa/verify` & `/phone/send-otp` | Edge misconfiguration can block legitimate OAuth clients behind shared NAT IPs | Edge drops floods; if Redis is down, app can fail-open to local `Map` for low-risk routes |
+| **Scaling Implications** | Scales cleanly to N horizontal Railway API replicas | Scales to arbitrary edge traffic, but does not solve multi-replica per-UID/per-phone state | Scales cleanly at both edge and multi-replica app tiers |
+
+**Recommendation for Current Stage:** Keep the existing in-memory `rateLimiter.js` intact for single-instance NOVA staging (`\$0` added cost). Before enabling >1 API replica or onboarding external customers, adopt **Option C (Hybrid)** starting with Upstash/Railway Redis for shared `mfa_fail` / `phone_dispatch` / `oauth` counters plus edge IP throttling.
 
 ---
 
-## 14. Manual Actions Still Required from Jon
+## 14. Production-Readiness Review & Outstanding Work
+
+### Production-Readiness Findings
+
+1. **Launch Blockers (Must Resolve Before First Customer)**
+   - **Blaze Billing, PITR, Backups & TTL (`PENDING — BILLING ACTIVATION`):** `lanzar-95ae3-dev` lacks PITR, delete protection, scheduled backups, and `authorization_codes.expiresAt` TTL.
+   - **Monitoring & Alerting:** No external uptime checks, error-rate alerts, or dead-letter queue (`DEAD_LETTER` in `security_outbox`) alerts are configured for NOVA API/worker.
+   - **Live Key-Rotation & DLQ Verification:** `SigningKeystore` key rotation/retired-key grace window and `security_outbox` `DEAD_LETTER` transition + `DesiredStateReconciler` drift repair have unit/emulator coverage, but have **not** yet been exercised end-to-end against live NOVA cloud.
+   - **Staging Frontend Callback Registration:** No staging frontend apps (`portal-nova`, `threadline-nova`, etc.) are deployed or registered in `lanzar-95ae3-dev` yet.
+
+2. **Important Pre-Launch Improvements**
+   - **Distributed Rate Limiting (Option C / Option A):** Required before scaling `lanzar-id-nova-api` past 1 replica.
+   - **TTL Schema Migration Plan:** `token_families.expiresAt`, `sessions.expiresAt`, `central_sessions.*ExpiresAt`, and `admin_idempotency.expiresAt` use ISO strings or epoch numbers and will accumulate indefinitely without a Timestamp migration or scheduled cleanup job.
+
+3. **Future Scalability Enhancements**
+   - Edge WAF caching/shielding for `/.well-known/jwks.json` and `/.well-known/openid-configuration`.
+   - Automated multi-region or read-replica telemetry dashboards.
+
+### Outstanding-Work Matrix
+
+| Category | Item | Status |
+|---|---|---|
+| **Completed & Verified** | OIDC Discovery, JWKS, PKCE `S256`, RS256 signing, refresh rotation/replay, auth-code replay session revocation, tenant isolation, admin RBAC/idempotency, Firestore rules, composite indexes (`users`, `admins`, `sessions`), worker suspension/reactivation & expired-lease recovery, SA cross-project isolation, prod callback blocking | **Verified Live (`27 / 27`) & Local (`91 / 91`)** |
+| **Prepared Awaiting Billing** | Firestore PITR, Delete Protection, Daily 7d Backup Schedule, `authorization_codes.expiresAt` TTL | **`PENDING — BILLING ACTIVATION`** |
+| **Decisions Awaiting Approval** | Distributed rate-limiting architecture (**Option C Hybrid** recommended) & TTL schema migration for `token_families` / `sessions` / `admin_idempotency` | **Awaiting Jon's Approval** |
+| **Remaining Launch-Readiness** | Monitoring/alerting setup, live key-rotation & DLQ/reconciler verification, staging frontend callback registration | **Open** |
+
+---
+
+## 15. Manual Actions Still Required from Jon
 
 1. **Enable Blaze Billing on `lanzar-95ae3-dev`:**
    - Open `https://console.developers.google.com/billing/enable?project=lanzar-95ae3-dev` and link a billing account.
-2. **Enable PITR, Delete Protection & Daily Backups (once Blaze is active):**
-   - Either run:
-     ```bash
-     npx firebase-tools firestore:databases:update "(default)" --point-in-time-recovery ENABLED --delete-protection ENABLED --project lanzar-95ae3-dev
-     npx firebase-tools firestore:backups:schedules:create --recurrence DAILY --retention 7d --project lanzar-95ae3-dev
-     ```
-   - Or in **GCP Console -> Firestore -> `(default)` -> Settings / Backups**: enable **Point-in-time recovery**, **Delete protection**, and a **Daily** backup schedule (7-day retention).
-3. **Enable Firestore TTL Policy:**
-   - **GCP Console -> Firestore -> `(default)` -> Time-to-live (TTL) -> Create policy**:
-     - Collection group: `oauth_codes`
+2. **Enable PITR, Delete Protection & Daily Backups (`PENDING — BILLING ACTIVATION`):**
+   ```bash
+   npx firebase-tools firestore:databases:update "(default)" --point-in-time-recovery ENABLED --delete-protection ENABLED --project lanzar-95ae3-dev
+   npx firebase-tools firestore:backups:schedules:create --database "(default)" --recurrence DAILY --retention 7d --project lanzar-95ae3-dev
+   ```
+3. **Enable Firestore TTL Policy (`PENDING — BILLING ACTIVATION`):**
+   - **GCP Console -> Firestore -> `(default)` -> Time-to-live (TTL) -> Create policy** (or `gcloud firestore fields ttls update expiresAt --collection-group=authorization_codes --enable-ttl --project=lanzar-95ae3-dev`):
+     - Collection group: `authorization_codes`
      - Timestamp field: `expiresAt`
 
 ---
 
-## 15. Production Isolation Verification
+## 16. Production Isolation Verification
 
 - `GET https://auth-api.lanzar.me/api/id/health` -> `200` (`appEnv: "production"`).
 - `GET https://auth.lanzar.me/` -> `200` (still serves `index-CL98VAEE.js`).
@@ -219,6 +273,6 @@ Executed after commit `2f22fbf` via `nova_live_verify_extended.mjs` against live
 
 ---
 
-## 16. Final Readiness Assessment
+## 17. Final Readiness Assessment
 
-**LANZAR ID NOVA Staging is operationally hardened and verified for staging integration.** All 27 extended live checks and 91 local regression checks pass after the final code change, production is completely isolated and untouched, and only Blaze-gated GCP Console settings (PITR, Delete Protection, Daily Backup Schedule, and `oauth_codes` TTL) remain for manual activation.
+**LANZAR ID NOVA Staging is operationally hardened and verified for single-instance staging integration** (`27 / 27` extended live checks + `91 / 91` local regression checks passing at checkpoint `nova-live-verified-2026-11-16`). Moving to controlled first-customer launch requires enabling Blaze billing (for PITR, backups, delete protection, and `authorization_codes` TTL), configuring monitoring/alerting, approving distributed rate limiting (Option C Hybrid), and completing live key-rotation/DLQ verification.
