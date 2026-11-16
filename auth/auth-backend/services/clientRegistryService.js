@@ -7,11 +7,61 @@
 const crypto = require('crypto');
 const net = require('net');
 const { clients: staticApprovedClients, getClient: getStaticClient, checkIsProduction } = require('../clients');
-const { VALID_COMPATIBILITY_MODES } = require('./oidcTokenService');
+const { VALID_COMPATIBILITY_MODES, SUPPORTED_SCOPES } = require('./oidcTokenService');
 
 const CLIENT_ID_REGEX = /^[a-z0-9][a-z0-9_-]{1,63}$/;
 const TENANT_ID_REGEX = /^[a-z0-9][a-z0-9_-]{1,63}$/;
 const VALID_AUTH_METHODS = new Set(['none', 'client_secret_post']);
+
+function validateAllowedOrigins(origins) {
+    if (origins === undefined || origins === null) return [];
+    if (!Array.isArray(origins)) {
+        throw new Error('allowedOrigins must be an array of exact origin URLs.');
+    }
+    const normalized = [];
+    for (const raw of origins) {
+        if (typeof raw !== 'string' || !raw.trim()) {
+            throw new Error('Each allowedOrigin must be a non-empty string.');
+        }
+        if (raw.includes('*')) {
+            throw new Error(`Wildcard origins are strictly forbidden: ${raw}`);
+        }
+        let parsed;
+        try {
+            parsed = new URL(raw.trim());
+        } catch (_) {
+            throw new Error(`Invalid origin URL: ${raw}`);
+        }
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+            throw new Error(`Unsupported origin protocol: ${raw}`);
+        }
+        if (parsed.pathname !== '/' || parsed.search || parsed.hash) {
+            throw new Error(`Origin must not include a path, query, or fragment: ${raw}`);
+        }
+        normalized.push(parsed.origin);
+    }
+    return Array.from(new Set(normalized));
+}
+
+function validateAllowedScopes(scopes) {
+    if (scopes === undefined || scopes === null) {
+        return [...SUPPORTED_SCOPES];
+    }
+    if (!Array.isArray(scopes) || scopes.length === 0) {
+        throw new Error('allowedScopes must be a non-empty array.');
+    }
+    const normalized = [];
+    for (const s of scopes) {
+        if (typeof s !== 'string' || !SUPPORTED_SCOPES.includes(s.trim())) {
+            throw new Error(`Unsupported scope: ${s}. Supported: ${SUPPORTED_SCOPES.join(', ')}`);
+        }
+        normalized.push(s.trim());
+    }
+    if (!normalized.includes('openid')) {
+        normalized.unshift('openid');
+    }
+    return Array.from(new Set(normalized));
+}
 
 function hashClientSecret(secret) {
     return crypto.createHash('sha256').update(String(secret), 'utf8').digest('hex');
@@ -98,6 +148,11 @@ class ClientRegistryService {
         }
         this.db = db;
         this.isProductionFn = typeof options.isProduction === 'function' ? options.isProduction : checkIsProduction;
+        this._originCache = { expiresAt: 0, map: new Map() };
+    }
+
+    invalidateOriginCache() {
+        this._originCache = { expiresAt: 0, map: new Map() };
     }
 
     _tenantClientRef(tenantId, clientId) {
@@ -128,6 +183,8 @@ class ClientRegistryService {
         clientId,
         name,
         redirectUris,
+        allowedOrigins,
+        allowedScopes,
         compatibilityMode = 'oidc',
         tokenEndpointAuthMethod = 'none',
         clientSecret,
@@ -155,6 +212,8 @@ class ClientRegistryService {
         }
 
         const validatedUris = validateRedirectUris(redirectUris);
+        const validatedOrigins = validateAllowedOrigins(allowedOrigins);
+        const validatedScopes = validateAllowedScopes(allowedScopes);
         const nowIso = new Date().toISOString();
 
         const record = {
@@ -163,6 +222,8 @@ class ClientRegistryService {
             tenantId,
             name: name.trim(),
             redirectUris: validatedUris,
+            allowedOrigins: validatedOrigins,
+            allowedScopes: validatedScopes,
             compatibilityMode,
             tokenEndpointAuthMethod,
             ...(tokenEndpointAuthMethod === 'client_secret_post' ? { clientSecretHash: hashClientSecret(clientSecret) } : {}),
@@ -194,6 +255,7 @@ class ClientRegistryService {
             tx.set(indexRef, {
                 clientId,
                 tenantId,
+                allowedOrigins: validatedOrigins,
                 enabled: record.enabled,
                 updatedAt: nowIso
             });
@@ -201,6 +263,7 @@ class ClientRegistryService {
                 auditLogService.writeInTransaction(tx, preparedAudit);
             }
         });
+        this.invalidateOriginCache();
 
         return sanitizeClientForPublicRead(record);
     }
@@ -250,6 +313,12 @@ class ClientRegistryService {
             if (patch.redirectUris !== undefined) {
                 next.redirectUris = validateRedirectUris(patch.redirectUris);
             }
+            if (patch.allowedOrigins !== undefined) {
+                next.allowedOrigins = validateAllowedOrigins(patch.allowedOrigins);
+            }
+            if (patch.allowedScopes !== undefined) {
+                next.allowedScopes = validateAllowedScopes(patch.allowedScopes);
+            }
             if (patch.compatibilityMode !== undefined) {
                 if (!VALID_COMPATIBILITY_MODES.has(patch.compatibilityMode)) {
                     throw new Error(`Unsupported compatibilityMode: ${patch.compatibilityMode}`);
@@ -270,6 +339,7 @@ class ClientRegistryService {
             tx.set(indexRef, {
                 clientId,
                 tenantId,
+                allowedOrigins: Array.isArray(next.allowedOrigins) ? next.allowedOrigins : [],
                 enabled: next.enabled,
                 status: next.status || (next.enabled ? 'active' : 'suspended'),
                 updatedAt: next.updatedAt
@@ -279,6 +349,7 @@ class ClientRegistryService {
             }
             return next;
         });
+        this.invalidateOriginCache();
 
         return sanitizeClientForPublicRead(updated);
     }
@@ -344,6 +415,75 @@ class ClientRegistryService {
             fallback.redirectUris = filterProductionRedirectUris(fallback.redirectUris);
         }
         return fallback;
+    }
+
+    async listTenantClients(tenantId) {
+        if (typeof tenantId !== 'string' || !TENANT_ID_REGEX.test(tenantId)) {
+            throw new Error('Invalid tenantId format.');
+        }
+        const snap = await this.db.collection('tenants').doc(tenantId).collection('clients').get();
+        const items = [];
+        snap.forEach((d) => items.push(sanitizeClientForPublicRead(d.data())));
+        return items;
+    }
+
+    async rotateClientSecret({ tenantId, clientId, auditLogService, auditContext }) {
+        if (typeof tenantId !== 'string' || !TENANT_ID_REGEX.test(tenantId)) {
+            throw new Error('Invalid tenantId format.');
+        }
+        if (typeof clientId !== 'string' || !CLIENT_ID_REGEX.test(clientId)) {
+            throw new Error('Invalid clientId format.');
+        }
+        const newSecret = `lzd_sec_${crypto.randomBytes(24).toString('hex')}`;
+        const preparedAudit = this._prepareAuditEvent(auditLogService, auditContext, {
+            targetTenantId: tenantId,
+            clientId,
+            operation: 'client.rotate_secret',
+            outcome: 'success'
+        });
+
+        await this.db.runTransaction(async (tx) => {
+            const clientRef = this._tenantClientRef(tenantId, clientId);
+            const snap = await tx.get(clientRef);
+            if (!snap.exists) {
+                throw new Error(`CLIENT_NOT_FOUND: ${clientId}`);
+            }
+            const current = snap.data();
+            if (current.tokenEndpointAuthMethod !== 'client_secret_post') {
+                throw new Error('Public PKCE clients (tokenEndpointAuthMethod=none) do not have a clientSecret.');
+            }
+            tx.update(clientRef, {
+                clientSecretHash: hashClientSecret(newSecret),
+                updatedAt: new Date().toISOString()
+            });
+            if (preparedAudit) {
+                auditLogService.writeInTransaction(tx, preparedAudit);
+            }
+        });
+
+        return { clientId, tenantId, clientSecret: newSecret };
+    }
+
+    async resolveDynamicOriginClient(origin) {
+        if (typeof origin !== 'string' || !origin) return null;
+        const now = Date.now();
+        if (now >= this._originCache.expiresAt) {
+            const nextMap = new Map();
+            const snap = await this.db.collection('clients_index').get();
+            const prodMode = Boolean(this.isProductionFn());
+            snap.forEach((doc) => {
+                const data = doc.data();
+                if (!data || !data.enabled || !Array.isArray(data.allowedOrigins)) return;
+                for (const allowed of data.allowedOrigins) {
+                    if (prodMode && isLoopbackOrLocalhostUri(allowed)) continue;
+                    if (!nextMap.has(allowed)) {
+                        nextMap.set(allowed, data.clientId);
+                    }
+                }
+            });
+            this._originCache = { expiresAt: now + 30000, map: nextMap };
+        }
+        return this._originCache.map.get(origin) || null;
     }
 
     isRedirectUriAuthorized(client, redirectUri) {
@@ -428,6 +568,8 @@ class ClientRegistryService {
 module.exports = {
     ClientRegistryService,
     validateRedirectUris,
+    validateAllowedOrigins,
+    validateAllowedScopes,
     hashClientSecret,
     sanitizeClientForPublicRead,
     isLoopbackOrLocalhostUri,

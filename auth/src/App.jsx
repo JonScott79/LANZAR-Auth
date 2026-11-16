@@ -27,8 +27,15 @@ function isAllowedRedirect(uri) {
     if (ALLOWED_DOMAINS.some(domain => url.hostname === domain || url.hostname.endsWith('.' + domain))) {
       return true
     }
-    if (isStagingHub() && STAGING_ALLOWED_HOSTS.has(url.hostname.toLowerCase())) {
-      return true
+    if (isStagingHub()) {
+      if (STAGING_ALLOWED_HOSTS.has(url.hostname.toLowerCase())) {
+        return true
+      }
+      // Allow external customer HTTPS callbacks (and loopback) in NOVA staging;
+      // backend POST /authorize authoritatively enforces exact client.redirectUris match.
+      if (url.protocol === 'https:' || url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+        return true
+      }
     }
     return false
   } catch (e) {

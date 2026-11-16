@@ -1,15 +1,36 @@
 // originValidator.js
 // Origin allowlisting and CORS header enforcement (LID-ARCH-REV-015 §2.3, §3.1, §3.2)
 
-function createOriginMiddleware(config) {
-  const originMap = config.originMap;
+const DYNAMIC_CLIENT_CORS_PREFIXES = [
+  '/oauth/',
+  '/.well-known/',
+  '/nova/.well-known/',
+  '/api/id/session/validate',
+  '/api/id/sessions'
+];
 
-  return function originValidator(req, res, next) {
+function isDynamicClientCorsPath(reqPath) {
+  if (typeof reqPath !== 'string') return false;
+  return DYNAMIC_CLIENT_CORS_PREFIXES.some(prefix => reqPath === prefix || reqPath.startsWith(prefix));
+}
+
+function createOriginMiddleware(config, options = {}) {
+  const originMap = config.originMap;
+  const clientRegistryService = options.clientRegistryService || null;
+
+  return async function originValidator(req, res, next) {
     const origin = req.headers.origin;
 
     // For OPTIONS preflight or normal requests
     if (origin) {
-      const clientAppId = originMap[origin];
+      let clientAppId = originMap[origin];
+      if (!clientAppId && clientRegistryService && typeof clientRegistryService.resolveDynamicOriginClient === 'function' && isDynamicClientCorsPath(req.path)) {
+        try {
+          clientAppId = await clientRegistryService.resolveDynamicOriginClient(origin);
+        } catch (err) {
+          console.warn('[ORIGIN] Dynamic origin lookup warning:', err.message);
+        }
+      }
       if (!clientAppId) {
         return res.status(403).json({
           error: `Origin "${origin}" is not allowed in environment "${config.appEnv}"`,

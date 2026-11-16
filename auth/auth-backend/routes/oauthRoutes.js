@@ -10,7 +10,7 @@ const { hashAuthorizationCode, generateRefreshToken } = require('../store');
 
 const { ACCESS_TOKEN_TTL_SECONDS, hasScope, normalizeScope, validateAndNormalizeScope } = require('../services/oidcTokenService');
 
-function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdmin, reconcileCustomerAccount, oidcTokenService, clientRegistryService, getClientOverride, authHubUrl }) {
+function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdmin, reconcileCustomerAccount, oidcTokenService, clientRegistryService, tenantService, getClientOverride, authHubUrl }) {
   const router = express.Router();
   const resolveClientAsync = async (id) => {
     if (typeof getClientOverride === 'function') {
@@ -45,6 +45,12 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
       const client = await resolveClientAsync(client_id);
       if (!client || !client.enabled) {
         return res.status(400).json({ error: 'invalid_client', error_description: 'Unknown or disabled client.' });
+      }
+      if (tenantService && typeof tenantService.isTenantActive === 'function') {
+        const active = await tenantService.isTenantActive(client.tenantId || 'lanzar');
+        if (!active) {
+          return res.status(403).json({ error: 'tenant_suspended', error_description: 'This organization tenant is currently suspended.' });
+        }
       }
       const isAuthorized = clientRegistryService && typeof clientRegistryService.isRedirectUriAuthorized === 'function'
         ? clientRegistryService.isRedirectUriAuthorized(client, redirect_uri)
@@ -108,6 +114,12 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
       const client = await resolveClientAsync(client_id);
       if (!client || !client.enabled) {
         return res.status(400).json({ error: 'invalid_client', error_description: 'Unknown or disabled client' });
+      }
+      if (tenantService && typeof tenantService.isTenantActive === 'function') {
+        const active = await tenantService.isTenantActive(client.tenantId || 'lanzar');
+        if (!active) {
+          return res.status(403).json({ error: 'tenant_suspended', error_description: 'This organization tenant is currently suspended.' });
+        }
       }
 
       const isAuthorized = clientRegistryService && typeof clientRegistryService.isRedirectUriAuthorized === 'function'

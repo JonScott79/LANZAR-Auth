@@ -19,6 +19,8 @@ const { AuthorizationCodeStore, FirestoreAuthorizationCodeStore } = require('./s
 const { SigningKeystore } = require('./services/signingKeystore');
 const { OidcTokenService } = require('./services/oidcTokenService');
 const { ClientRegistryService } = require('./services/clientRegistryService');
+const { TenantService } = require('./services/tenantService');
+const { BillingService } = require('./services/billingService');
 const { AuditLogService } = require('./services/auditLogService');
 const { PlatformOutboxService } = require('./services/platformOutboxService');
 
@@ -34,6 +36,8 @@ const { createPhoneRouter } = require('./routes/phoneRoutes');
 const { createDispatchRouter } = require('./routes/dispatchRoutes');
 const { createAdminRouter } = require('./routes/adminRoutes');
 const { createSessionRouter } = require('./routes/sessionRoutes');
+const { createDeveloperRouter } = require('./routes/developerRoutes');
+const { createBillingWebhookRouter, attachTenantBillingRoutes } = require('./routes/billingRoutes');
 
 function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
   const app = express();
@@ -48,6 +52,23 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
     : (process.env.TRUST_PROXY !== undefined ? process.env.TRUST_PROXY : false);
   app.set('trust proxy', trustProxySetting);
 
+  const tenantService = services.tenantService || (
+    db && typeof db.collection === 'function'
+      ? new TenantService(db)
+      : null
+  );
+
+  const billingService = services.billingService || (
+    db && typeof db.collection === 'function' && tenantService
+      ? new BillingService(db, tenantService)
+      : null
+  );
+
+  // Stripe Webhook Receiver (must be mounted BEFORE express.json() for raw body signature verification)
+  if (billingService) {
+    app.use('/api/billing', createBillingWebhookRouter({ billingService }));
+  }
+
   app.use(express.json());
 
   // Correlation / Request ID Propagation
@@ -61,9 +82,15 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
     next();
   });
 
-  // CORS and Origin Validation
+  const clientRegistryService = services.clientRegistryService || (
+    db && typeof db.collection === 'function'
+      ? new ClientRegistryService(db)
+      : null
+  );
+
+  // CORS and Origin Validation (supports dynamic registered client origins on OAuth/OIDC/session paths)
   if (config && config.originMap) {
-    const originMiddleware = createOriginMiddleware(config);
+    const originMiddleware = createOriginMiddleware(config, { clientRegistryService });
     app.use(originMiddleware);
   } else {
     app.use(cors());
@@ -120,12 +147,6 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
       : null
   );
 
-  const clientRegistryService = services.clientRegistryService || (
-    db && typeof db.collection === 'function'
-      ? new ClientRegistryService(db)
-      : null
-  );
-
   const oauthRouter = createOAuthRouter({
     db,
     authAdmin,
@@ -135,6 +156,7 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
     reconcileCustomerAccount,
     oidcTokenService,
     clientRegistryService,
+    tenantService,
     authHubUrl: config ? config.authHubUrl : undefined
   });
   app.use('/oauth', oauthRouter);
@@ -145,6 +167,20 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
       ? new AuditLogService(db)
       : null
   );
+
+  if (tenantService && clientRegistryService) {
+    const developerRouter = createDeveloperRouter({
+      tenantService,
+      clientRegistryService,
+      auditLogService,
+      oidcTokenService,
+      authenticateUserMiddleware: authMiddleware.authenticateUserMiddleware
+    });
+    if (billingService) {
+      attachTenantBillingRoutes(developerRouter, { tenantService, clientRegistryService, billingService });
+    }
+    app.use('/api/dev', developerRouter);
+  }
 
   const clientRegistryRouter = createClientRegistryRouter({
     clientRegistryService,

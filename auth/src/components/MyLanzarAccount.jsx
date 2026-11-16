@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { signOutUser, sendPasswordReset, sendEmailVerificationToUser } from '../firebase/auth.js'
 import { getAuthApiUrl } from '../config/env.js'
 import TotpQrCode from './TotpQrCode.jsx'
+import DeveloperConsole from './DeveloperConsole.jsx'
 import './MyLanzarAccount.css'
 
 export default function MyLanzarAccount({ user, onClose = null }) {
@@ -395,6 +396,9 @@ export default function MyLanzarAccount({ user, onClose = null }) {
         </button>
         <button className={`tab-btn ${activeTab === 'apps' ? 'active' : ''}`} onClick={() => setActiveTab('apps')}>
           📦 Applications
+        </button>
+        <button className={`tab-btn ${activeTab === 'developer' ? 'active' : ''}`} onClick={() => setActiveTab('developer')}>
+          🛠 Developer
         </button>
         <button className={`tab-btn ${activeTab === 'founders' ? 'active' : ''}`} onClick={() => setActiveTab('founders')}>
           🎖 Founders
@@ -923,6 +927,10 @@ export default function MyLanzarAccount({ user, onClose = null }) {
               </div>
             )}
           </div>
+        )}
+
+        {activeTab === 'developer' && (
+          <DeveloperConsole user={user} notify={notify} />
         )}
       </div>
 
