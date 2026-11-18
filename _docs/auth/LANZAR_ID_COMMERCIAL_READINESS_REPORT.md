@@ -18,32 +18,37 @@ Independently inspected via `GET https://firestore.googleapis.com/v1/projects/la
 
 ---
 
-## Part B: Expiration-Field Schema Migration & Rollback (NOVA Staging Executed)
+## Part B: Expiration-Field Schema Migration & Rollback (NOVA Staging — COMPLETE)
 
-> **Policy:** Existing ISO-8601 and Unix-epoch expiration fields and application-level expiration checks were preserved unchanged. No documents were physically deleted by the migration, and documents without `ttlExpiresAt` are ignored by Firestore TTL.
+> **Status:** **COMPLETE on NOVA Staging (`lanzar-95ae3-dev`, database `(default)`, `us-east1`)** — verified November 18, 2026 (implementation commit `39e7cd6`).  
+> **Scope Boundary:** Production (`lanzar-95ae3`) remains untouched; these TTL policies and dual-write changes have **not** been deployed or enabled in production.  
+> **Policy:** Existing ISO-8601 and Unix-epoch expiration fields and application-level expiration checks were preserved unchanged. No documents were physically deleted by the migration, and documents without `ttlExpiresAt` are ignored by Firestore TTL. Firestore TTL deletion is asynchronous (`ACTIVE` indicates the policy is enabled, not immediate deletion of expired documents).
 
-### 1. Dual-Write Implementation & Retention Policies
+### 1. Dual-Write Implementation, Retention Policies & Backfill Results
 
-Implemented via shared helper `auth/auth-backend/services/ttlHelper.js` (`computeTtlDate`, `parseExpiryToMs`):
+Implemented via shared helper `auth/auth-backend/services/ttlHelper.js` (`computeTtlDate`, `parseExpiryToMs`) in commit `39e7cd6`:
 
-| Collection Group | Existing Field(s) Preserved | New Native Timestamp Field | Retention Policy | Write Paths Updated | Staging Backfill Results (`lanzar-95ae3-dev`) |
+| Collection Group | Existing Field(s) Preserved | TTL Field | Retention After App Expiration | Write Paths Updated | Staging Backfill (`lanzar-95ae3-dev`) |
 |---|---|---|---|---|---|
-| `sessions` | `expiresAt` (ISO string or epoch sec) | `ttlExpiresAt` | Existing expiration **+ 24h grace** | `sessionService.js`, `centralSessionService.js`, `oauthRoutes.js` | `49` scanned, `49` backfilled, `0` skipped |
-| `central_sessions` | `absoluteExpiresAt`, `idleExpiresAt` (Unix sec) | `ttlExpiresAt` | `absoluteExpiresAt` (**0 grace**) | `centralSessionService.js` | `10` scanned, `10` backfilled, `0` skipped |
-| `token_families` | `expiresAt` (ISO string) | `ttlExpiresAt` | Existing expiration **+ 7d grace** | `oauthRoutes.js` | `46` scanned, `46` backfilled, `0` skipped |
-| `phone_otps` | `expiresAt` (ISO string) | `ttlExpiresAt` | Existing expiration **+ 1h grace** | `smsService.js` (all 3 OTP flows) | `0` scanned, `0` backfilled, `0` skipped |
-| `admin_idempotency` | `expiresAt` (ISO string, `IDEMPOTENCY_TTL_MS = 24h`) | `ttlExpiresAt` | Matches `24h` retention (**0 grace**) | `adminRoutes.js` (both idempotent tx paths) | `17` scanned, `17` backfilled, `0` skipped |
+| `sessions` | `expiresAt` (ISO string or epoch sec) | `ttlExpiresAt` | **24 hours** | `sessionService.js`, `centralSessionService.js`, `oauthRoutes.js` | `49` scanned, `49` backfilled, `0` skipped |
+| `central_sessions` | `absoluteExpiresAt`, `idleExpiresAt` (Unix sec) | `ttlExpiresAt` | **0 hours** (`absoluteExpiresAt`) | `centralSessionService.js` | `10` scanned, `10` backfilled, `0` skipped |
+| `token_families` | `expiresAt` (ISO string) | `ttlExpiresAt` | **7 days** | `oauthRoutes.js` | `46` scanned, `46` backfilled, `0` skipped |
+| `phone_otps` | `expiresAt` (ISO string) | `ttlExpiresAt` | **1 hour** | `smsService.js` (all 3 OTP flows) | `0` scanned, `0` backfilled, `0` skipped |
+| `admin_idempotency` | `expiresAt` (ISO string, `IDEMPOTENCY_TTL_MS = 24h`) | `ttlExpiresAt` | **0 hours** (matches 24h retention) | `adminRoutes.js` (both idempotent tx paths) | `17` scanned, `17` backfilled, `0` skipped |
 
-### 2. Enable Native TTL Policies in Cloud Shell (`lanzar-95ae3-dev` Only)
+Total backfilled: **122 / 122** documents (`0` skipped, `0` deleted).
 
-After verifying the backfill above (`122/122` documents populated, `0` skipped), run in Google Cloud Shell:
+### 2. Cloud Shell TTL Policy Verification (`lanzar-95ae3-dev` Only — November 18, 2026)
 
-```bash
-for group in sessions central_sessions token_families phone_otps admin_idempotency; do
-  gcloud firestore fields ttls update ttlExpiresAt \
-    --collection-group="$group" --enable-ttl --project="lanzar-95ae3-dev"
-done
-```
+Independently verified by Jon in Google Cloud Shell via `gcloud firestore fields ttls list --collection-group="$group" --database="(default)" --project="lanzar-95ae3-dev"`:
+
+| Collection Group | TTL Field | Verified State (`ttlConfig.state`) |
+|---|---|---|
+| `sessions` | `ttlExpiresAt` | `ACTIVE` |
+| `central_sessions` | `ttlExpiresAt` | `ACTIVE` |
+| `token_families` | `ttlExpiresAt` | `ACTIVE` |
+| `phone_otps` | `ttlExpiresAt` | `ACTIVE` |
+| `admin_idempotency` | `ttlExpiresAt` | `ACTIVE` |
 
 ### 3. Rollback Procedure
 
@@ -72,7 +77,7 @@ Because all existing `expiresAt` / `absoluteExpiresAt` fields and application-le
 | Stripe Test-Mode Billing & Webhook Engine (`/api/billing/webhook`) | **COMPLETE** | Live verified on NOVA staging (`cf90a3c2-5cdd-4c9e-b08f-a0b8095669f2`): 10/10 checks passed (`cs_test_...`, webhooks, idempotency, entitlements, 403 cross-tenant isolation). |
 | Public Product Website, Quick-Start Docs, Competitor Matrix, Legal Drafts | **COMPLETE** | Built in `auth/site/` and `_docs/auth/`. |
 | Firestore PITR (7d), Delete Protection, Daily Backups (7d), `authorization_codes` TTL | **COMPLETE (STAGING)** | Enabled & verified on `lanzar-95ae3-dev` (`updateTime: 2026-11-18T04:32:05Z`). Must be repeated on production when authorized. |
-| Secondary TTL Policies (`sessions`, `central_sessions`, `token_families`, `phone_otps`, `admin_idempotency`) | **IN PROGRESS (BACKFILLED)** | Dual-write deployed + 122/122 staging docs backfilled with `ttlExpiresAt`; run Cloud Shell `--enable-ttl` loop to activate policies. |
+| Secondary TTL Policies (`sessions`, `central_sessions`, `token_families`, `phone_otps`, `admin_idempotency`) | **COMPLETE (STAGING)** | Commit `39e7cd6` deployed; 122/122 staging docs backfilled; all 5 `ttlExpiresAt` policies verified `ACTIVE` in Cloud Shell on 2026-11-18. Production remains untouched. |
 | Transactional Email Delivery (Custom Branded Verification / Reset) | **REQUIRES EXTERNAL APPROVAL** | Currently uses Firebase Auth client emails; backend `/register` & `/password/forgot` need Resend/Postmark key for custom branding. |
 | External Uptime & `DEAD_LETTER` Alerting | **REQUIRES EXTERNAL APPROVAL** | `/api/id/ready` & `/api/admin/id/telemetry` ready; needs Better Stack / UptimeRobot + webhook URL. |
 | Legal Counsel Sign-Off on ToS / Privacy / AUP & Stripe Live Mode | **REQUIRES EXTERNAL APPROVAL** | Draft requirements prepared; must be reviewed before flipping Stripe to live mode. |
