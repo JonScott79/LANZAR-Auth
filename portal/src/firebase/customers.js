@@ -149,46 +149,7 @@ export async function getOrCreateAuthorizedCustomer(firebaseUser, options = {}) 
     return existingCustomer.active === true ? existingCustomer : null;
   }
 
-  // Auto-provision initial customer profile so new users never hit an access denied loop
-  const displayName = firebaseUser.displayName || (firebaseUser.email ? firebaseUser.email.split('@')[0] : 'Customer');
-  const email = firebaseUser.email || '';
-
-  const newProfile = {
-    displayName,
-    email,
-    active: true,
-    role: 'USER',
-    services: [],
-    createdAt: new Date().toISOString()
-  };
-
-  let writeTimer;
-  try {
-    const userRef = doc(db, 'users', firebaseUser.uid);
-    await Promise.race([
-      setDoc(userRef, newProfile, { merge: true }),
-      new Promise((_, reject) => {
-        writeTimer = setTimeout(() => {
-          reject(new Error('Profile provisioning write timed out'));
-        }, timeoutMs);
-      })
-    ]);
-  } catch (err) {
-    console.warn('[AUTH] Could not write users collection:', err.message);
-  } finally {
-    if (writeTimer !== undefined) clearTimeout(writeTimer);
-  }
-
-  return {
-    id: firebaseUser.uid,
-    customerId: firebaseUser.uid,
-    customerName: displayName,
-    displayName: displayName,
-    customerEmail: email,
-    authEmail: email,
-    accountId: null,
-    role: 'USER',
-    services: [],
-    active: true
-  };
+  // Do NOT auto-provision an active customer in-memory when Firestore profile is missing
+  // (users/{uid} is provisioned server-side by LANZAR ID /provision or /authorize).
+  return null;
 }

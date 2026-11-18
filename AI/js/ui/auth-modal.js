@@ -13,6 +13,15 @@
 import { authService } from "../auth/auth-service.js";
 import { globalBus } from "../core/event-bus.js";
 
+function escapeHtml(val) {
+  return String(val ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export class AuthModalController {
   #container = null;
 
@@ -57,12 +66,12 @@ export class AuthModalController {
               <!-- Active Authenticated Profile -->
               <div class="auth-profile-card">
                 <div class="auth-avatar-circle">
-                  ${user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
+                  ${escapeHtml(user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U')}
                 </div>
                 <div class="auth-profile-details">
-                  <span class="auth-display-name">${user.displayName || 'Authenticated Pilot'}</span>
-                  <span class="auth-email">${user.email || 'pilot@lanzar.me'}</span>
-                  <span class="auth-uid-badge">UID: <code>${user.uid}</code></span>
+                  <span class="auth-display-name">${escapeHtml(user.displayName || 'Authenticated Pilot')}</span>
+                  <span class="auth-email">${escapeHtml(user.email || 'pilot@lanzar.me')}</span>
+                  <span class="auth-uid-badge">UID: <code>${escapeHtml(user.uid)}</code></span>
                 </div>
               </div>
 
@@ -86,35 +95,9 @@ export class AuthModalController {
               </div>
 
               <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-                <!-- Google / OAuth Hub Sign In -->
-                <button type="button" class="btn btn-primary" id="btnSignInGoogle" style="width: 100%; justify-content: center; font-size: 0.9rem; padding: 0.75rem;">
-                  <span style="font-size: 1.1rem; margin-right: 0.3rem;">🌐</span> Continue with Google / LANZAR Hub
+                <button type="button" class="btn btn-primary" id="btnSignInLanzarId" style="width: 100%; justify-content: center; font-size: 0.9rem; padding: 0.75rem;">
+                  Sign in with LANZAR ID
                 </button>
-
-                <div style="display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0;">
-                  <hr style="flex: 1; border: none; border-top: 1px solid var(--border-subtle);" />
-                  <span style="font-size: 0.72rem; color: var(--text-tertiary); text-transform: uppercase; font-weight: 700;">Identity Switcher</span>
-                  <hr style="flex: 1; border: none; border-top: 1px solid var(--border-subtle);" />
-                </div>
-
-                <!-- Instant Multi-User Identity Testing Switcher -->
-                <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.25rem;">
-                  Switch identity to test complete server-side session isolation:
-                </p>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
-                  <button type="button" class="btn btn-secondary btn-switch-identity" data-uid="user_dr_vance" data-name="Dr. Penelope Vance" style="font-size: 0.78rem; padding: 0.5rem;">
-                    👩‍🚀 Dr. Vance
-                  </button>
-                  <button type="button" class="btn btn-secondary btn-switch-identity" data-uid="user_pete_sterling" data-name="Peter Sterling" style="font-size: 0.78rem; padding: 0.5rem; background: #245873;">
-                    🔬 Pete Sterling
-                  </button>
-                  <button type="button" class="btn btn-secondary btn-switch-identity" data-uid="user_mina_chen" data-name="Mina Chen" style="font-size: 0.78rem; padding: 0.5rem; background: #d32f3f;">
-                    🎨 Mina Chen
-                  </button>
-                  <button type="button" class="btn btn-secondary btn-switch-identity" data-uid="user_test_alpha" data-name="User Alpha" style="font-size: 0.78rem; padding: 0.5rem; background: #4a5568;">
-                    🧪 User Alpha
-                  </button>
-                </div>
               </div>
             `}
 
@@ -140,7 +123,7 @@ export class AuthModalController {
     const btnClose = this.#container.querySelector("#btnCloseAuth");
     const backdrop = this.#container.querySelector("#authBackdrop");
     const btnSignOut = this.#container.querySelector("#btnAuthSignOut");
-    const btnGoogle = this.#container.querySelector("#btnSignInGoogle");
+    const btnSignIn = this.#container.querySelector("#btnSignInLanzarId");
 
     btnClose?.addEventListener("click", () => this.close());
     backdrop?.addEventListener("click", (e) => {
@@ -152,20 +135,8 @@ export class AuthModalController {
       this.close();
     });
 
-    btnGoogle?.addEventListener("click", () => {
-      // Connect to LANZAR Auth Hub with Google / default account
-      authService.signInWithIdentity("user_google_authenticated", "LANZAR Pilot (Google SSO)", "pilot@lanzar.me");
-      this.close();
-    });
-
-    // Identity switchers
-    this.#container.querySelectorAll(".btn-switch-identity").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const uid = btn.getAttribute("data-uid");
-        const name = btn.getAttribute("data-name");
-        authService.signInWithIdentity(uid, name);
-        this.close();
-      });
+    btnSignIn?.addEventListener("click", () => {
+      authService.signInWithLanzarId();
     });
   }
 }

@@ -257,6 +257,15 @@ function sanitizeContinuationUrl(rawUrl, config = STAGING_CONFIG) {
   }
 }
 
+function generateCryptoState() {
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const arr = new Uint8Array(16);
+    crypto.getRandomValues(arr);
+    return base64UrlEncode(arr);
+  }
+  throw new Error('Web Crypto API is required to generate cryptographic OAuth state.');
+}
+
 /**
  * Initiates an authentication popup window using PKCE.
  * Keeps the code_verifier strictly in the client application scope.
@@ -266,7 +275,7 @@ async function openPopup(options = {}, config = STAGING_CONFIG) {
   const pkce = await generatePkcePair();
   const clientId = options.clientId || 'portal';
   const redirectUri = options.redirectUri || (typeof window !== 'undefined' ? window.location.href : '');
-  const state = options.state || Math.random().toString(36).substring(2);
+  const state = options.state || generateCryptoState();
 
   const authUrl = buildAuthorizeUrl({
     clientId,
@@ -497,7 +506,7 @@ class LanzarAuthModal extends BaseElement {
 
     const clientId = options.clientId || this.getAttribute('client-id') || 'portal';
     const redirectUri = options.redirectUri || this.getAttribute('redirect-uri') || (typeof window !== 'undefined' ? window.location.href : '');
-    const state = options.state || Math.random().toString(36).substring(2);
+    const state = options.state || generateCryptoState();
 
     const authUrl = buildAuthorizeUrl({
       clientId,

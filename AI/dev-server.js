@@ -39,12 +39,42 @@ const MIME_TYPES = {
 // Auth & Request Parsing Utilities
 // =====================================
 
-function sendJson(res, statusCode, data) {
+const ALLOWED_ORIGINS = new Set(
+  (process.env.AI_ALLOWED_ORIGINS || `http://localhost:${PORT},http://127.0.0.1:${PORT},https://ai.lanzar.me,https://lanzar-ai-nova.netlify.app`)
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+);
+
+const BLOCKED_STATIC_PREFIXES = ['/data/', '/server/', '/engine/', '/tests/', '/checkpoints/', '/.netlify/'];
+const BLOCKED_STATIC_FILES = new Set(['package.json', 'package-lock.json', '.env', '.env.example', 'dev-server.js']);
+
+const inferenceRateMap = new Map();
+function checkInferenceRateLimit(key, maxPerMin = 30) {
+  const now = Date.now();
+  const rec = inferenceRateMap.get(key);
+  if (!rec || now >= rec.resetAt) {
+    inferenceRateMap.set(key, { count: 1, resetAt: now + 60000 });
+    return true;
+  }
+  if (rec.count >= maxPerMin) return false;
+  rec.count++;
+  return true;
+}
+
+function resolveCorsOrigin(req) {
+  const origin = req && req.headers ? req.headers.origin : null;
+  if (origin && ALLOWED_ORIGINS.has(origin)) return origin;
+  return `http://localhost:${PORT}`;
+}
+
+function sendJson(res, statusCode, data, req = null) {
   res.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=UTF-8',
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': resolveCorsOrigin(req),
+    'Vary': 'Origin',
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-Id'
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
   });
   res.end(JSON.stringify(data));
 }
@@ -85,6 +115,26 @@ async function handleApiRequest(req, res, urlPath) {
 
   const userId = authUser.uid;
   const method = req.method;
+
+  // Enforce authentication for private user data & inference routes
+  const requiresAuth = (
+    urlPath.startsWith('/api/memory') ||
+    urlPath.startsWith('/api/conversations') ||
+    urlPath.startsWith('/api/user') ||
+    urlPath.startsWith('/api/inference/chat') ||
+    urlPath.startsWith('/api/inference/multi') ||
+    urlPath.startsWith('/api/inference/stream')
+  );
+  if (requiresAuth && !authUser.authenticated) {
+    return sendJson(res, 401, { error: 'Authentication required' }, req);
+  }
+
+  if (urlPath.startsWith('/api/inference/') && urlPath !== '/api/inference/status') {
+    const rlKey = `${authUser.uid}:${req.socket?.remoteAddress || 'local'}`;
+    if (!checkInferenceRateLimit(rlKey)) {
+      return sendJson(res, 429, { error: 'Rate limit exceeded. Please try again shortly.' }, req);
+    }
+  }
 
   // 0. Hosted AI Inference & Deterministic Math Endpoints
   if (urlPath === '/api/inference/status') {
@@ -327,11 +377,23 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Route Static Files
-  let filePath = path.join(ROOT_DIR, urlPath === '/' ? 'index.html' : urlPath);
+  // Route Static Files (strictly block private data, server code, and env files)
+  const normalizedUrl = urlPath.toLowerCase();
+  const baseName = path.basename(normalizedUrl);
+  if (
+    BLOCKED_STATIC_PREFIXES.some(p => normalizedUrl.startsWith(p)) ||
+    BLOCKED_STATIC_FILES.has(baseName) ||
+    baseName.startsWith('.env')
+  ) {
+    res.writeHead(403, { 'Content-Type': 'text/plain' });
+    res.end('Forbidden');
+    return;
+  }
+
+  let filePath = path.resolve(ROOT_DIR, (urlPath === '/' ? 'index.html' : urlPath).replace(/^\/+/, ''));
 
   // Prevent directory traversal
-  if (!filePath.startsWith(ROOT_DIR)) {
+  if (filePath !== ROOT_DIR && !filePath.startsWith(ROOT_DIR + path.sep)) {
     res.writeHead(403, { 'Content-Type': 'text/plain' });
     res.end('Forbidden');
     return;

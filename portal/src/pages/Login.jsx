@@ -150,7 +150,9 @@ export default function Login({
     setLoadingMsg('Redirecting to LANZAR Identity...')
     try {
       const pkce = await LanzarAuth.generatePkcePair()
-      const state = Math.random().toString(36).substring(2)
+      const stateBytes = new Uint8Array(16)
+      crypto.getRandomValues(stateBytes)
+      const state = Array.from(stateBytes, b => b.toString(16).padStart(2, '0')).join('')
 
       sessionStorage.setItem('pkce_state', state)
       sessionStorage.setItem('pkce_code_verifier', pkce.codeVerifier)
