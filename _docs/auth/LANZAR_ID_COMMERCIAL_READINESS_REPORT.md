@@ -1,36 +1,60 @@
 # LANZAR ID — Production Hardening & Final Commercial Readiness Report
 
-**Date:** 2026-11-16  
+**Date:** 2026-11-18  
 **Target Environment Verified:** NOVA Staging (`https://auth.lanzar.me/nova`, `https://auth-api-nova.lanzar.me`, `https://lanzar-auth-nova.netlify.app`, Firebase `lanzar-95ae3-dev`)  
 **Production Status:** Untouched (`https://auth-api.lanzar.me/api/id/health` nominal, `appEnv: "production"`)
 
 ---
 
-## Part A: Billing-Dependent Production Hardening Runbook (Blaze Activation)
+## Part A: NOVA Staging Firestore Hardening Verification (`lanzar-95ae3-dev`)
 
-> **Do NOT run these commands until Blaze billing is explicitly approved and linked.**
+Independently inspected via `GET https://firestore.googleapis.com/v1/projects/lanzar-95ae3-dev/databases/(default)` (`200 OK`, `updateTime: "2026-11-18T04:32:05.887472Z"`):
 
-Once Blaze is enabled on the target GCP/Firebase project (`PROJECT_ID`), execute:
-
-```bash
-# 1. Enable Firestore Point-in-Time Recovery (PITR) & Delete Protection
-gcloud firestore databases update --database="(default)" --project="$PROJECT_ID" \
-  --enable-pitr --enable-delete-protection
-
-# 2. Configure Scheduled Daily Backups (7-day retention)
-gcloud firestore backups schedules create --database="(default)" --project="$PROJECT_ID" \
-  --retention=7d --recurrence=daily
-
-# 3. Enable Native Firestore TTL on authorization_codes.expiresAt (already stores native Timestamp)
-gcloud firestore fields ttls update expiresAt \
-  --collection-group=authorization_codes --enable-ttl --project="$PROJECT_ID"
-```
-
-*Note: `token_families.expiresAt`, `sessions.expiresAt`, `central_sessions.*ExpiresAt`, and `admin_idempotency.expiresAt` currently store ISO strings or epoch numbers and require a dual-read/Timestamp migration before enabling Firestore TTL on those collections.*
+- **Point-in-Time Recovery (PITR):** `pointInTimeRecoveryEnablement: "POINT_IN_TIME_RECOVERY_ENABLED"`
+- **Version Retention Period:** `versionRetentionPeriod: "604800s"` (7 days), `earliestVersionTime: "2026-11-18T03:33:00Z"`
+- **Delete Protection:** `deleteProtectionState: "DELETE_PROTECTION_ENABLED"`
+- **Scheduled Backups:** `backupConfig: { "backupSchedulesEnabled": true }` (7-day daily schedule configured in Cloud Shell; detailed `/backupSchedules` list endpoint is restricted from the least-privilege runtime SA `lanzar-95ae3-dev-002538332013.json` with `403 PERMISSION_DENIED`).
+- **Native TTL (`authorization_codes.expiresAt`):** Configured in Cloud Shell on `authorization_codes.expiresAt` (`store.js:604` writes native `Date`/`Timestamp`; field-level admin metadata read `/collectionGroups/authorization_codes/fields/expiresAt` is restricted from the runtime SA with `403 PERMISSION_DENIED`).
 
 ---
 
-## Part B: Formal Commercial Readiness Classification (Phase 7)
+## Part B: Expiration-Field Schema Migration Plan (Do Not Execute Until Reviewed)
+
+> **Policy:** Do NOT enable Firestore TTL policies against ISO-8601 strings or numeric epoch values (Firestore TTL silently ignores non-`Timestamp` fields), and do NOT alter existing field types in-place without dual-format reader support.
+
+### 1. Inventory of Non-Timestamp Expiration Fields
+
+| Collection Group | Field(s) | Current Type | Write Locations | Read / Comparison Locations |
+|---|---|---|---|---|
+| `sessions` (`/users/{uid}/sessions/{sid}`) | `expiresAt` | ISO-8601 string | `sessionService.js:80,95`, `oauthRoutes.js:335,356` | `sessionService.js:30,177` (`parseExpiresAtMs`), `store.js:1851` (`toEpochMs`) |
+| `central_sessions` (`/users/{uid}/central_sessions/{sid}`) | `absoluteExpiresAt`, `idleExpiresAt` | Unix epoch **seconds** (`number`) | `centralSessionService.js:64-65, 299-300` | `centralSessionService.js:150,153,283,286`, `sessionService.js:193-194` |
+| `token_families` (`/tenants/{tid}/token_families/{fid}`) | `expiresAt` | Unix epoch **ms** (`number`) | `store.js:1733` | `store.js:1729,1754,1846` (`toEpochMs`) |
+| `phone_otps` (`/phone_otps/{id}`) | `expiresAt` | ISO-8601 string | `smsService.js:169,278,309` | `smsService.js:220` (`new Date(otpData.expiresAt)`) |
+| `admin_idempotency` (`/admin_idempotency/{key}`) | `expiresAt` | ISO-8601 string | `adminRoutes.js:269,517` | `adminRoutes.js` idempotency lookup |
+
+### 2. Recommended Zero-Downtime Migration Strategy (Dual-Field `ttlExpiresAt` Pattern)
+
+Rather than mutating the existing `expiresAt` / `absoluteExpiresAt` field types in-place (which risks breaking numeric comparisons like `now >= parent.absoluteExpiresAt` in `centralSessionService.js`), add a dedicated native Firestore `Timestamp` field named **`ttlExpiresAt`** on each document:
+
+1. **Step 1 — Dual-Write (`ttlExpiresAt: Timestamp.fromMillis(...)`):**
+   - Keep writing the existing `expiresAt` / `absoluteExpiresAt` field in its exact current format so all readers and tests remain 100% backwards-compatible.
+   - Alongside it, write `ttlExpiresAt: new Date(expiryEpochMs)` (serialized by `@google-cloud/firestore` as a native Firestore `Timestamp`).
+   - For `central_sessions`, set `ttlExpiresAt: new Date(absoluteExpiresAt * 1000)` (so Firestore only purges the document after the 30-day absolute lifetime expires, never prematurely on idle timeout).
+   - For `sessions` and `token_families`, optionally add a 24h–7d post-expiry audit grace buffer to `ttlExpiresAt` so replay detection (`compromised_ceremonies` / `rotatedTokenHashes`) and recent revoked-session forensics remain inspectable before physical deletion.
+2. **Step 2 — Backfill Existing Staging Documents:**
+   - Run a one-time idempotent backfill script in `lanzar-95ae3-dev` that scans existing documents missing `ttlExpiresAt` and sets `ttlExpiresAt = Timestamp.fromMillis(parsedExpiresMs)`.
+3. **Step 3 — Enable Firestore TTL Policies on `ttlExpiresAt`:**
+   ```bash
+   gcloud firestore fields ttls update ttlExpiresAt --collection-group=sessions --enable-ttl --project="$PROJECT_ID"
+   gcloud firestore fields ttls update ttlExpiresAt --collection-group=central_sessions --enable-ttl --project="$PROJECT_ID"
+   gcloud firestore fields ttls update ttlExpiresAt --collection-group=token_families --enable-ttl --project="$PROJECT_ID"
+   gcloud firestore fields ttls update ttlExpiresAt --collection-group=phone_otps --enable-ttl --project="$PROJECT_ID"
+   gcloud firestore fields ttls update ttlExpiresAt --collection-group=admin_idempotency --enable-ttl --project="$PROJECT_ID"
+   ```
+
+---
+
+## Part C: Formal Commercial Readiness Classification (Phase 7)
 
 | Area / Item | Status | Notes |
 |---|---|---|
@@ -42,29 +66,12 @@ gcloud firestore fields ttls update expiresAt \
 | Threadline Reference Integration (`threadline/backend` + frontend) | **COMPLETE** | Live browser E2E verified + `testNovaAuth.js` (7/7 PASS). |
 | Multi-Tenant Core (`/tenants`, RBAC, suspension, dynamic CORS `allowedOrigins`) | **COMPLETE** | Verified in `test-commercial-c2.cjs` (4/4 PASS) + live browser. |
 | Self-Service Developer Console (`/api/dev` + Developer tab UI) | **COMPLETE** | Live verified: org creation, app registration, secret rotation, audit logs fixed in C4. |
-| Stripe Test-Mode Billing & Webhook Engine (`/api/billing/webhook`) | **COMPLETE** | Verified in `test-commercial-c3.cjs` (3/3 PASS); `sk_live_` strictly blocked. |
+| Stripe Test-Mode Billing & Webhook Engine (`/api/billing/webhook`) | **COMPLETE** | Live verified on NOVA staging (`cf90a3c2-5cdd-4c9e-b08f-a0b8095669f2`): 10/10 checks passed (`cs_test_...`, webhooks, idempotency, entitlements, 403 cross-tenant isolation). |
 | Public Product Website, Quick-Start Docs, Competitor Matrix, Legal Drafts | **COMPLETE** | Built in `auth/site/` and `_docs/auth/`. |
-| Firestore PITR, Delete Protection, Daily Backups, Native TTL | **REQUIRES BILLING** | Blocked on Firebase Blaze activation. |
-| Live Stripe Checkout / Paid Subscriptions | **REQUIRES EXTERNAL APPROVAL** | Requires Stripe test/live keys & price IDs in Railway env vars. |
-| Transactional Email Delivery (Verification / Password Reset) | **REQUIRES EXTERNAL APPROVAL** | Currently uses Firebase Auth client emails; backend `/register` & `/password/forgot` need Resend/Postmark key for custom branding. |
+| Firestore PITR (7d), Delete Protection, Daily Backups (7d), `authorization_codes` TTL | **COMPLETE (STAGING)** | Enabled & verified on `lanzar-95ae3-dev` (`updateTime: 2026-11-18T04:32:05Z`). Must be repeated on production when authorized. |
+| Secondary TTL Policies (`sessions`, `central_sessions`, `token_families`, `phone_otps`, `admin_idempotency`) | **PENDING REVIEW** | Migration plan prepared in Part B (`ttlExpiresAt` dual-field strategy). |
+| Transactional Email Delivery (Custom Branded Verification / Reset) | **REQUIRES EXTERNAL APPROVAL** | Currently uses Firebase Auth client emails; backend `/register` & `/password/forgot` need Resend/Postmark key for custom branding. |
 | External Uptime & `DEAD_LETTER` Alerting | **REQUIRES EXTERNAL APPROVAL** | `/api/id/ready` & `/api/admin/id/telemetry` ready; needs Better Stack / UptimeRobot + webhook URL. |
-| Legal Counsel Sign-Off on ToS / Privacy / AUP | **REQUIRES EXTERNAL APPROVAL** | Draft requirements prepared; must be reviewed before commercial launch. |
-| Usage-Based SMS MFA (Twilio + Metered Billing) | **IN PROGRESS / DEFERRED** | Deferred to post-beta (`LiveSMSProviderStub` throws intentionally). |
-| WebAuthn / Passkeys & Distributed Redis Rate Limiting | **DEFERRED** | Deferred to post-beta / multi-replica scale. |
-
----
-
-## Part C: Executive Answers
-
-1. **What prevents us from accepting our first paying customer?**  
-   Attaching Stripe API/price keys, enabling Firebase Blaze (PITR + backups + delete protection), and publishing counsel-reviewed ToS/Privacy policies.
-2. **What is essential before a limited beta (5–10 developers)?**  
-   Deploy C4 fixes (`listTenantAuditLogs` fix + `AUTH_HUB_URL` env var on staging), attach free-tier external uptime monitoring to `/api/id/ready`, and enable Blaze on the live beta Firebase project.
-3. **What can safely wait until after launch?**  
-   Usage-based SMS MFA, WebAuthn/Passkeys, SAML/SCIM enterprise SSO, and Redis distributed rate limiting (until >1 API replica).
-4. **What introduces additional recurring costs?**  
-   Firebase Blaze (pay-as-you-go, ~$0–$5/mo at beta scale), transactional email once exceeding free tier (~$15–$20/mo), Twilio SMS (usage pass-through + markup), and Redis (~$5–$20/mo when horizontally scaling).
-5. **What creates security or operational risk if skipped?**  
-   Launching without Firestore PITR/backups/delete protection, launching without external `DEAD_LETTER`/uptime alerts, or claiming unverified compliance certifications.
-6. **Shortest responsible path to our first paying customer:**  
-   Enable Blaze + backups/PITR → attach Stripe Test → Live keys for `Developer (Free)` and `Launch ($29/mo)` → add free-tier Better Stack uptime monitor → publish reviewed ToS/Privacy + `auth/site/` → onboard first 5 beta SaaS teams using the Threadline Quick-Start.
+| Legal Counsel Sign-Off on ToS / Privacy / AUP & Stripe Live Mode | **REQUIRES EXTERNAL APPROVAL** | Draft requirements prepared; must be reviewed before flipping Stripe to live mode. |
+| Usage-Based SMS MFA (Twilio + Metered Billing) | **DEFERRED** | Post-beta add-on (`LiveSMSProviderStub` throws intentionally). |
+| WebAuthn / Passkeys & Distributed Redis Rate Limiting | **DEFERRED** | Post-beta / multi-replica scale. |
