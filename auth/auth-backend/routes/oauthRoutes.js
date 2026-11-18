@@ -9,6 +9,7 @@ const { oauthAuthorizeLimiter, oauthExchangeLimiter } = require('../middleware/r
 const { hashAuthorizationCode, generateRefreshToken } = require('../store');
 
 const { ACCESS_TOKEN_TTL_SECONDS, hasScope, normalizeScope, validateAndNormalizeScope } = require('../services/oidcTokenService');
+const { computeTtlDate, SESSION_TTL_GRACE_MS, TOKEN_FAMILY_TTL_GRACE_MS } = require('../services/ttlHelper');
 
 function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdmin, reconcileCustomerAccount, oidcTokenService, clientRegistryService, tenantService, getClientOverride, authHubUrl }) {
   const router = express.Router();
@@ -333,6 +334,7 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
           createdAt: now.toISOString(),
           lastSeenAt: now.toISOString(),
           expiresAt: expiresAt.toISOString(),
+          ttlExpiresAt: computeTtlDate(expiresAt, SESSION_TTL_GRACE_MS),
           revoked: false
         };
 
@@ -354,6 +356,7 @@ function createOAuthRouter({ db, authAdmin, codeStore, sessionService, isUserAdm
           scope: record.scope || 'openid profile email',
           authTime: (record.userClaims && Number.isInteger(record.userClaims.authTime)) ? record.userClaims.authTime : null,
           expiresAt: expiresAt.toISOString(),
+          ttlExpiresAt: computeTtlDate(expiresAt, TOKEN_FAMILY_TTL_GRACE_MS),
           createdAt: now.toISOString(),
           revoked: false
         };

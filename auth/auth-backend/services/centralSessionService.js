@@ -2,6 +2,7 @@
 // Authoritative Central Session Lifecycle, Slots & Token Exchange (LID-ARCH-REV-015 §4)
 
 const crypto = require('crypto');
+const { computeTtlDate, CENTRAL_SESSION_TTL_GRACE_MS, SESSION_TTL_GRACE_MS } = require('./ttlHelper');
 
 class CentralSessionError extends Error {
   constructor(message, status = 400, code = 'SESSION_ERROR') {
@@ -63,6 +64,7 @@ class CentralSessionService {
       lastSeenAt: now,
       absoluteExpiresAt,
       idleExpiresAt,
+      ttlExpiresAt: computeTtlDate(absoluteExpiresAt, CENTRAL_SESSION_TTL_GRACE_MS, 'seconds'),
       revoked: false,
       revokedAt: null,
       revokedReason: null,
@@ -198,6 +200,7 @@ class CentralSessionService {
           createdAt: now,
           lastSeenAt: now,
           expiresAt: childExpiresAt,
+          ttlExpiresAt: computeTtlDate(childExpiresAt, SESSION_TTL_GRACE_MS, 'seconds'),
           revoked: false,
           revokedAt: null
         };

@@ -18,39 +18,42 @@ Independently inspected via `GET https://firestore.googleapis.com/v1/projects/la
 
 ---
 
-## Part B: Expiration-Field Schema Migration Plan (Do Not Execute Until Reviewed)
+## Part B: Expiration-Field Schema Migration & Rollback (NOVA Staging Executed)
 
-> **Policy:** Do NOT enable Firestore TTL policies against ISO-8601 strings or numeric epoch values (Firestore TTL silently ignores non-`Timestamp` fields), and do NOT alter existing field types in-place without dual-format reader support.
+> **Policy:** Existing ISO-8601 and Unix-epoch expiration fields and application-level expiration checks were preserved unchanged. No documents were physically deleted by the migration, and documents without `ttlExpiresAt` are ignored by Firestore TTL.
 
-### 1. Inventory of Non-Timestamp Expiration Fields
+### 1. Dual-Write Implementation & Retention Policies
 
-| Collection Group | Field(s) | Current Type | Write Locations | Read / Comparison Locations |
-|---|---|---|---|---|
-| `sessions` (`/users/{uid}/sessions/{sid}`) | `expiresAt` | ISO-8601 string | `sessionService.js:80,95`, `oauthRoutes.js:335,356` | `sessionService.js:30,177` (`parseExpiresAtMs`), `store.js:1851` (`toEpochMs`) |
-| `central_sessions` (`/users/{uid}/central_sessions/{sid}`) | `absoluteExpiresAt`, `idleExpiresAt` | Unix epoch **seconds** (`number`) | `centralSessionService.js:64-65, 299-300` | `centralSessionService.js:150,153,283,286`, `sessionService.js:193-194` |
-| `token_families` (`/tenants/{tid}/token_families/{fid}`) | `expiresAt` | Unix epoch **ms** (`number`) | `store.js:1733` | `store.js:1729,1754,1846` (`toEpochMs`) |
-| `phone_otps` (`/phone_otps/{id}`) | `expiresAt` | ISO-8601 string | `smsService.js:169,278,309` | `smsService.js:220` (`new Date(otpData.expiresAt)`) |
-| `admin_idempotency` (`/admin_idempotency/{key}`) | `expiresAt` | ISO-8601 string | `adminRoutes.js:269,517` | `adminRoutes.js` idempotency lookup |
+Implemented via shared helper `auth/auth-backend/services/ttlHelper.js` (`computeTtlDate`, `parseExpiryToMs`):
 
-### 2. Recommended Zero-Downtime Migration Strategy (Dual-Field `ttlExpiresAt` Pattern)
+| Collection Group | Existing Field(s) Preserved | New Native Timestamp Field | Retention Policy | Write Paths Updated | Staging Backfill Results (`lanzar-95ae3-dev`) |
+|---|---|---|---|---|---|
+| `sessions` | `expiresAt` (ISO string or epoch sec) | `ttlExpiresAt` | Existing expiration **+ 24h grace** | `sessionService.js`, `centralSessionService.js`, `oauthRoutes.js` | `49` scanned, `49` backfilled, `0` skipped |
+| `central_sessions` | `absoluteExpiresAt`, `idleExpiresAt` (Unix sec) | `ttlExpiresAt` | `absoluteExpiresAt` (**0 grace**) | `centralSessionService.js` | `10` scanned, `10` backfilled, `0` skipped |
+| `token_families` | `expiresAt` (ISO string) | `ttlExpiresAt` | Existing expiration **+ 7d grace** | `oauthRoutes.js` | `46` scanned, `46` backfilled, `0` skipped |
+| `phone_otps` | `expiresAt` (ISO string) | `ttlExpiresAt` | Existing expiration **+ 1h grace** | `smsService.js` (all 3 OTP flows) | `0` scanned, `0` backfilled, `0` skipped |
+| `admin_idempotency` | `expiresAt` (ISO string, `IDEMPOTENCY_TTL_MS = 24h`) | `ttlExpiresAt` | Matches `24h` retention (**0 grace**) | `adminRoutes.js` (both idempotent tx paths) | `17` scanned, `17` backfilled, `0` skipped |
 
-Rather than mutating the existing `expiresAt` / `absoluteExpiresAt` field types in-place (which risks breaking numeric comparisons like `now >= parent.absoluteExpiresAt` in `centralSessionService.js`), add a dedicated native Firestore `Timestamp` field named **`ttlExpiresAt`** on each document:
+### 2. Enable Native TTL Policies in Cloud Shell (`lanzar-95ae3-dev` Only)
 
-1. **Step 1 — Dual-Write (`ttlExpiresAt: Timestamp.fromMillis(...)`):**
-   - Keep writing the existing `expiresAt` / `absoluteExpiresAt` field in its exact current format so all readers and tests remain 100% backwards-compatible.
-   - Alongside it, write `ttlExpiresAt: new Date(expiryEpochMs)` (serialized by `@google-cloud/firestore` as a native Firestore `Timestamp`).
-   - For `central_sessions`, set `ttlExpiresAt: new Date(absoluteExpiresAt * 1000)` (so Firestore only purges the document after the 30-day absolute lifetime expires, never prematurely on idle timeout).
-   - For `sessions` and `token_families`, optionally add a 24h–7d post-expiry audit grace buffer to `ttlExpiresAt` so replay detection (`compromised_ceremonies` / `rotatedTokenHashes`) and recent revoked-session forensics remain inspectable before physical deletion.
-2. **Step 2 — Backfill Existing Staging Documents:**
-   - Run a one-time idempotent backfill script in `lanzar-95ae3-dev` that scans existing documents missing `ttlExpiresAt` and sets `ttlExpiresAt = Timestamp.fromMillis(parsedExpiresMs)`.
-3. **Step 3 — Enable Firestore TTL Policies on `ttlExpiresAt`:**
+After verifying the backfill above (`122/122` documents populated, `0` skipped), run in Google Cloud Shell:
+
+```bash
+for group in sessions central_sessions token_families phone_otps admin_idempotency; do
+  gcloud firestore fields ttls update ttlExpiresAt \
+    --collection-group="$group" --enable-ttl --project="lanzar-95ae3-dev"
+done
+```
+
+### 3. Rollback Procedure
+
+Because all existing `expiresAt` / `absoluteExpiresAt` fields and application-level expiration checks remain intact:
+1. Disable any TTL policy immediately without data-format impact:
    ```bash
-   gcloud firestore fields ttls update ttlExpiresAt --collection-group=sessions --enable-ttl --project="$PROJECT_ID"
-   gcloud firestore fields ttls update ttlExpiresAt --collection-group=central_sessions --enable-ttl --project="$PROJECT_ID"
-   gcloud firestore fields ttls update ttlExpiresAt --collection-group=token_families --enable-ttl --project="$PROJECT_ID"
-   gcloud firestore fields ttls update ttlExpiresAt --collection-group=phone_otps --enable-ttl --project="$PROJECT_ID"
-   gcloud firestore fields ttls update ttlExpiresAt --collection-group=admin_idempotency --enable-ttl --project="$PROJECT_ID"
+   gcloud firestore fields ttls update ttlExpiresAt \
+     --collection-group="<group>" --disable-ttl --project="lanzar-95ae3-dev"
    ```
+2. Revert the dual-write commit if needed; all existing readers continue operating on `expiresAt` / `absoluteExpiresAt` with zero downtime.
 
 ---
 
@@ -69,7 +72,7 @@ Rather than mutating the existing `expiresAt` / `absoluteExpiresAt` field types 
 | Stripe Test-Mode Billing & Webhook Engine (`/api/billing/webhook`) | **COMPLETE** | Live verified on NOVA staging (`cf90a3c2-5cdd-4c9e-b08f-a0b8095669f2`): 10/10 checks passed (`cs_test_...`, webhooks, idempotency, entitlements, 403 cross-tenant isolation). |
 | Public Product Website, Quick-Start Docs, Competitor Matrix, Legal Drafts | **COMPLETE** | Built in `auth/site/` and `_docs/auth/`. |
 | Firestore PITR (7d), Delete Protection, Daily Backups (7d), `authorization_codes` TTL | **COMPLETE (STAGING)** | Enabled & verified on `lanzar-95ae3-dev` (`updateTime: 2026-11-18T04:32:05Z`). Must be repeated on production when authorized. |
-| Secondary TTL Policies (`sessions`, `central_sessions`, `token_families`, `phone_otps`, `admin_idempotency`) | **PENDING REVIEW** | Migration plan prepared in Part B (`ttlExpiresAt` dual-field strategy). |
+| Secondary TTL Policies (`sessions`, `central_sessions`, `token_families`, `phone_otps`, `admin_idempotency`) | **IN PROGRESS (BACKFILLED)** | Dual-write deployed + 122/122 staging docs backfilled with `ttlExpiresAt`; run Cloud Shell `--enable-ttl` loop to activate policies. |
 | Transactional Email Delivery (Custom Branded Verification / Reset) | **REQUIRES EXTERNAL APPROVAL** | Currently uses Firebase Auth client emails; backend `/register` & `/password/forgot` need Resend/Postmark key for custom branding. |
 | External Uptime & `DEAD_LETTER` Alerting | **REQUIRES EXTERNAL APPROVAL** | `/api/id/ready` & `/api/admin/id/telemetry` ready; needs Better Stack / UptimeRobot + webhook URL. |
 | Legal Counsel Sign-Off on ToS / Privacy / AUP & Stripe Live Mode | **REQUIRES EXTERNAL APPROVAL** | Draft requirements prepared; must be reviewed before flipping Stripe to live mode. |

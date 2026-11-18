@@ -6,6 +6,7 @@ const express = require('express');
 const { FieldValue } = require('firebase-admin/firestore');
 const { clients } = require('../clients');
 const { PlatformOutboxService } = require('../services/platformOutboxService');
+const { computeTtlDate, ADMIN_IDEMPOTENCY_TTL_GRACE_MS } = require('../services/ttlHelper');
 
 const IDEMPOTENCY_KEY_REGEX = /^[A-Za-z0-9._:-]{16,128}$/;
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
@@ -358,7 +359,8 @@ function createAdminRouter({ db, authAdmin, profileService, founderService, sess
           responseSnapshot,
           createdAt: nowIso,
           updatedAt: nowIso,
-          expiresAt
+          expiresAt,
+          ttlExpiresAt: computeTtlDate(expiresAt, ADMIN_IDEMPOTENCY_TTL_GRACE_MS)
         });
 
         const versionedAudit = {
@@ -591,7 +593,8 @@ function createAdminRouter({ db, authAdmin, profileService, founderService, sess
           responseSnapshot,
           createdAt: nowIso,
           updatedAt: nowIso,
-          expiresAt
+          expiresAt,
+          ttlExpiresAt: computeTtlDate(expiresAt, ADMIN_IDEMPOTENCY_TTL_GRACE_MS)
         });
 
         const versionedAudit = {

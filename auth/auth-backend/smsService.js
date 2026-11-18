@@ -5,6 +5,7 @@
 const crypto = require('crypto');
 const { FieldValue } = require('firebase-admin/firestore');
 const { resolveEnvironment } = require('./config/environments');
+const { computeTtlDate, PHONE_OTP_TTL_GRACE_MS } = require('./services/ttlHelper');
 
 function checkIsProduction() {
     try {
@@ -174,6 +175,7 @@ class SMSService {
             purpose: 'settings_verification',
             codeHash,
             expiresAt,
+            ttlExpiresAt: computeTtlDate(expiresAt, PHONE_OTP_TTL_GRACE_MS),
             attempts: 0,
             verified: false,
             createdAt: FieldValue.serverTimestamp()
@@ -283,6 +285,7 @@ class SMSService {
             purpose: 'phone_login',
             codeHash,
             expiresAt,
+            ttlExpiresAt: computeTtlDate(expiresAt, PHONE_OTP_TTL_GRACE_MS),
             attempts: 0,
             verified: false,
             createdAt: FieldValue.serverTimestamp()
@@ -314,6 +317,7 @@ class SMSService {
             purpose: 'phone_replacement',
             codeHash,
             expiresAt,
+            ttlExpiresAt: computeTtlDate(expiresAt, PHONE_OTP_TTL_GRACE_MS),
             attempts: 0,
             verified: false,
             createdAt: FieldValue.serverTimestamp()

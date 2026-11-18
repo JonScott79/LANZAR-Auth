@@ -4,6 +4,7 @@
 const crypto = require('crypto');
 const { FieldValue } = require('firebase-admin/firestore');
 const { recordSecurityEvent } = require('./auditService');
+const { computeTtlDate, SESSION_TTL_GRACE_MS } = require('./services/ttlHelper');
 
 // In-memory cache for fast revocation checks to minimize Firestore reads when explicitly enabled.
 // In distributed multi-instance environments (LID-SEC-003), authoritative Firestore lookups
@@ -78,6 +79,7 @@ class SessionService {
             createdAt: now.toISOString(),
             lastSeenAt: now.toISOString(),
             expiresAt: expiresAt.toISOString(),
+            ttlExpiresAt: computeTtlDate(expiresAt, SESSION_TTL_GRACE_MS),
             revoked: false,
             revokedAt: null,
             revokedBy: null
