@@ -3,6 +3,7 @@
 
 const DYNAMIC_CLIENT_CORS_PREFIXES = [
   '/oauth/',
+  '/exchange',
   '/.well-known/',
   '/nova/.well-known/',
   '/api/id/session/validate',
