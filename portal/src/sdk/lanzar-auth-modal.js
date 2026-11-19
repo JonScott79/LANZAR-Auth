@@ -205,9 +205,13 @@ async function exchangeCodeForSession(options = {}, config = STAGING_CONFIG) {
 
   let res;
   try {
+    const idempotencyKey = `ptl_${generateCryptoState()}`;
     res = await fetch(`${apiBase}/exchange`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey
+      },
       body: JSON.stringify({
         code,
         client_id: clientId,
