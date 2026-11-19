@@ -38,7 +38,7 @@ const auth = getAuth(app)
 const appEnv = (import.meta.env.VITE_APP_ENV || (import.meta.env.DEV ? 'development' : 'production')).toLowerCase()
 const authEmuHost = import.meta.env.VITE_FIREBASE_AUTH_EMULATOR_HOST
 
-if (appEnv === 'development' || authEmuHost) {
+if (appEnv === 'development') {
   const hostStr = authEmuHost || '127.0.0.1:9099'
   const emuUrl = hostStr.startsWith('http://') || hostStr.startsWith('https://')
     ? hostStr

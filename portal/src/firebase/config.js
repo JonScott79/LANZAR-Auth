@@ -58,7 +58,7 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig)
 
 // Connect Firestore Emulator in development
 const firestoreEmuHost = import.meta.env.VITE_FIRESTORE_EMULATOR_HOST
-if (appEnv === 'development' || firestoreEmuHost) {
+if (appEnv === 'development') {
   const hostStr = firestoreEmuHost || '127.0.0.1:8080'
   const [host, portStr] = hostStr.split(':')
   const port = parseInt(portStr || '8080', 10)

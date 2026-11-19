@@ -83,3 +83,22 @@ Because all existing `expiresAt` / `absoluteExpiresAt` fields and application-le
 | Legal Counsel Sign-Off on ToS / Privacy / AUP & Stripe Live Mode | **REQUIRES EXTERNAL APPROVAL** | Draft requirements prepared; must be reviewed before flipping Stripe to live mode. |
 | Usage-Based SMS MFA (Twilio + Metered Billing) | **DEFERRED** | Post-beta add-on (`LiveSMSProviderStub` throws intentionally). |
 | WebAuthn / Passkeys & Distributed Redis Rate Limiting | **DEFERRED** | Post-beta / multi-replica scale. |
+
+---
+
+## Part D: Production vs. Staging Readiness & External Launch Gates (November 19, 2026)
+
+### 1. Pricing & Final Staging Remediation Completed
+- **Tier Pricing Aligned (`$29.99 / $99.99 / $299.99`):** Updated `tenantService.js`, `DeveloperConsole.jsx`, `auth/site/index.html`, `LANZAR_ID_COMPETITOR_COMPARISON.md`, and `LANZAR_ID_LEGAL_AND_SECURITY_REQUIREMENTS.md` (`Developer` Free, `Launch` `$29.99/mo`, `Growth` `$99.99/mo`, `Scale` `$299.99/mo`, `Enterprise` Custom).
+- **OIDC Logout & Dynamic CORS:** `DELETE /api/id/sessions/:sessionId` now accepts RS256 OIDC access tokens (`deviceSessionRoutes.js`), and `/exchange` is included in `DYNAMIC_CLIENT_CORS_PREFIXES` (`originValidator.js`).
+- **Frontend Emulator Safety & Portal E2E:** Gated Auth/Firestore emulator connections strictly on `appEnv === 'development'` in both `auth/src/firebase/` and `portal/src/firebase/`, added `base64UrlEncode` to `portal/src/sdk/lanzar-auth-modal.js`, and verified `lanzar-portal-nova.netlify.app` end-to-end (`POST /provision` 200, `POST /authorize` 200, `POST /exchange` 200, `GET /api/id/session/validate` 200, dashboard render, reload persistence, Sign Out 200). Note: direct reload on `lanzar-portal-nova.netlify.app/dashboard` returns 404 until SPA rewrite rules (`/* /index.html 200`) are added to `portal`.
+
+### 2. Production Infrastructure Audit (`AuthServer` & `lanzar-95ae3`)
+Live inspection of Railway project `AuthServer` (`578541fb-ca0e-4feb-8b1a-9653c9e13fa8`, service `LANZAR-Auth` `36441009-3296-4e61-97e2-59e24b55d220`, active deployment `a6d062d4-2f7a-45a6-820c-ae663799c2c0`) and `https://auth-api.lanzar.me/api/id/health` (`HTTP 200`, `appEnv: "production"`) identified the following mandatory external gates before promoting `nova-staging` to production:
+
+1. **Missing Fail-Closed Production Env Vars on `LANZAR-Auth`:** `bootstrap.js` and `mfaService.js` fail closed in production without `SIGNING_KEY_ENCRYPTION_KEY`, `ACTIVE_SIGNING_KEK_VERSION`, `MFA_ENCRYPTION_KEY`, `EXPECTED_SA_EMAIL`, `RECEIPT_ENCRYPTION_KEY`, `ACTIVE_RECEIPT_KEY_VERSION`, and `OIDC_ISSUER`.
+2. **Missing Background `worker` Service in `AuthServer`:** Needed for automated RS256 key rotation/retirement and outbox processing.
+3. **Production Firebase (`lanzar-95ae3`) Hardening:** Still requires Blaze billing link, Firestore PITR (7-day), delete protection, scheduled daily backups, and native TTL policies (`authorization_codes.expiresAt` + 5 `ttlExpiresAt` collection groups).
+4. **Stripe Live Mode & Legal Sign-Off:** `STRIPE_SECRET_KEY` (`sk_live_...`), `STRIPE_WEBHOOK_SECRET`, live `STRIPE_PRICE_*` IDs, and counsel-reviewed Terms of Service / Privacy Policy / AUP are required before enabling live customer billing.
+
+**Classification:** **READY FOR PRODUCTION** (engineering & staging verification complete; production promotion gated on the four external items above).

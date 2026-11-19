@@ -98,6 +98,17 @@ function generateCodeVerifier(length = 64) {
  * @param {string} verifier
  * @returns {Promise<string>} Base64URL-encoded SHA-256 digest
  */
+function base64UrlEncode(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  const base64 = typeof btoa === 'function'
+    ? btoa(binary)
+    : Buffer.from(binary, 'binary').toString('base64');
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 async function generateCodeChallenge(verifier) {
   if (!verifier || typeof verifier !== 'string') {
     throw new Error('Invalid code_verifier: must be a non-empty string.');
@@ -107,15 +118,7 @@ async function generateCodeChallenge(verifier) {
     const encoder = new TextEncoder();
     const data = encoder.encode(verifier);
     const digest = await cryptoObj.subtle.digest('SHA-256', data);
-    const bytes = new Uint8Array(digest);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    const base64 = typeof btoa === 'function' 
-      ? btoa(binary) 
-      : Buffer.from(binary, 'binary').toString('base64');
-    return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return base64UrlEncode(new Uint8Array(digest));
   }
   // Node.js fallback
   try {
