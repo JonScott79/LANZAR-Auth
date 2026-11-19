@@ -24,7 +24,7 @@ const PLAN_ENTITLEMENTS = {
   launch: {
     planId: 'launch',
     displayName: 'Launch',
-    priceMonthlyUsd: 29,
+    priceMonthlyUsd: 29.99,
     maxApps: 10,
     maxMau: 10000,
     smsMfaEnabled: true,
@@ -33,7 +33,7 @@ const PLAN_ENTITLEMENTS = {
   growth: {
     planId: 'growth',
     displayName: 'Growth',
-    priceMonthlyUsd: 99,
+    priceMonthlyUsd: 99.99,
     maxApps: 25,
     maxMau: 50000,
     smsMfaEnabled: true,
@@ -42,7 +42,7 @@ const PLAN_ENTITLEMENTS = {
   scale: {
     planId: 'scale',
     displayName: 'Scale',
-    priceMonthlyUsd: 299,
+    priceMonthlyUsd: 299.99,
     maxApps: 100,
     maxMau: 250000,
     smsMfaEnabled: true,

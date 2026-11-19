@@ -9,9 +9,9 @@
 | Plan | Monthly Price | Included Apps | Included MAU | Key Capabilities |
 |---|---:|---:|---:|---|
 | **Developer** | Free | 3 | 1,000 | OIDC + PKCE S256, RS256 JWKS, TOTP MFA, Refresh Rotation |
-| **Launch** | $29/mo | 10 | 10,000 | Everything in Developer + SMS MFA (usage-billed) |
-| **Growth** | $99/mo | 25 | 50,000 | Everything in Launch + Custom Domain support (planned) |
-| **Scale** | $299/mo | 100 | 250,000 | Higher limits, priority support, multi-admin orgs |
+| **Launch** | $29.99/mo | 10 | 10,000 | Everything in Developer + SMS MFA (usage-billed) |
+| **Growth** | $99.99/mo | 25 | 50,000 | Everything in Launch + Custom Domain support (planned) |
+| **Scale** | $299.99/mo | 100 | 250,000 | Higher limits, priority support, multi-admin orgs |
 | **Enterprise** | Custom | 1,000+ | Custom | Dedicated terms & SLA |
 
 *Note: SMS MFA is billed strictly on usage with a transparent markup—never unlimited.*
@@ -31,7 +31,7 @@
 | **WebAuthn / Passkeys** | Not yet (roadmap) | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
 | **Enterprise SAML 2.0 / SCIM** | Not yet (roadmap) | Yes ($$$) | Yes ($125/conn) | Yes | Yes | Yes | Yes | Yes |
 | **Usage-Based SMS MFA** | Post-beta add-on | Yes | Add-on | Yes | Yes | Bring Twilio | Bring Twilio | Yes |
-| **Predictable Flat Entry Tier** | **$29/mo (10k MAU)** | Jumps steeply after 7.5k–10k MAU | $125/SAML conn | Usage-based | $249+ Pro tiers | Self-host or $100+ cloud | $16+ Pro | $99–$399+ |
+| **Predictable Flat Entry Tier** | **$29.99/mo (10k MAU)** | Jumps steeply after 7.5k–10k MAU | $125/SAML conn | Usage-based | $249+ Pro tiers | Self-host or $100+ cloud | $16+ Pro | $99–$399+ |
 
 ---
 

@@ -7,7 +7,7 @@
 ## 1. Terms of Service (Requirements)
 - **Service Scope & SLA:** Define LANZAR ID as a multi-tenant authentication and OIDC identity service; specify beta/best-effort availability during limited commercial beta (no formal 99.99% SLA until post-Blaze production hardening).
 - **Customer Responsibilities:** Customers are responsible for securing their own `client_secret` values, configuring accurate `redirectUris` and `allowedOrigins`, and complying with applicable laws for their end users.
-- **Billing & Plan Limits:** Cover `Developer` (Free), `Launch` ($29/mo), `Growth` ($99/mo), `Scale` ($299/mo), and `Enterprise` (Custom); specify Stripe subscription renewal, cancellation (downgrade at period end or immediate), and suspension behavior on prolonged payment failure.
+- **Billing & Plan Limits:** Cover `Developer` (Free), `Launch` ($29.99/mo), `Growth` ($99.99/mo), `Scale` ($299.99/mo), and `Enterprise` (Custom); specify Stripe subscription renewal, cancellation (downgrade at period end or immediate), and suspension behavior on prolonged payment failure.
 - **Usage-Based SMS MFA (Future):** State clearly that SMS delivery is metered per message with markup and subject to carrier/anti-abuse caps (no unlimited SMS).
 - **Limitation of Liability & Indemnification:** Standard SaaS liability cap (e.g., fees paid in prior 12 months) and customer indemnification for unlawful end-user data collection.
 

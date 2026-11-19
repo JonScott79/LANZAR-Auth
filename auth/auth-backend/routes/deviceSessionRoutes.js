@@ -3,8 +3,29 @@
 
 const express = require('express');
 
-function createDeviceSessionRouter({ db, authAdmin, sessionService, authenticateUserMiddleware, isUserAdmin }) {
+function createDeviceSessionRouter({ db, authAdmin, sessionService, oidcTokenService, authenticateUserMiddleware, isUserAdmin }) {
   const router = express.Router();
+
+  // Accepts either a Firebase ID token (authenticateUserMiddleware) OR a valid LANZAR ID OIDC RS256 access_token
+  const authenticateSessionActor = async (req, res, next) => {
+    const authHeader = req.headers.authorization || '';
+    if (oidcTokenService && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.slice(7).trim();
+      try {
+        const oidcRes = await oidcTokenService.verifyAccessToken(token);
+        if (oidcRes && oidcRes.valid && oidcRes.payload && oidcRes.payload.sub) {
+          req.uid = oidcRes.payload.sub;
+          req.sessionId = oidcRes.payload.session_id || null;
+          req.user = oidcRes.payload;
+          req.authMethod = 'oidc';
+          return next();
+        }
+      } catch (_) {
+        // Fall through to Firebase session middleware
+      }
+    }
+    return authenticateUserMiddleware(req, res, next);
+  };
 
   /**
    * Upgrades a standard Firebase ID token minted on auth_hub standalone sign-in
@@ -114,8 +135,11 @@ function createDeviceSessionRouter({ db, authAdmin, sessionService, authenticate
     }
   });
 
-  router.delete('/sessions/:sessionId', authenticateUserMiddleware, async (req, res) => {
+  router.delete('/sessions/:sessionId', authenticateSessionActor, async (req, res) => {
     try {
+      if (req.authMethod === 'oidc' && req.sessionId && req.sessionId !== req.params.sessionId) {
+        return res.status(403).json({ error: 'forbidden', error_description: 'OIDC token may only revoke its own session.' });
+      }
       const result = await sessionService.revokeSession(req.uid, req.params.sessionId, req.uid, req.ip);
       return res.json(result);
     } catch (err) {

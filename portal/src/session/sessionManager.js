@@ -17,9 +17,10 @@ import { withTimeout, fetchWithTimeout } from '../utils/asyncTimeout.js'
 export const SESSION_STORAGE_KEY = 'lanzar_session_id'
 
 export const AUTH_API_BASE =
-  window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  import.meta.env.VITE_AUTH_API_BASE ||
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:4001'
-    : 'https://auth-api.lanzar.me'
+    : 'https://auth-api.lanzar.me')
 
 // Backend error codes that mean the credential is no longer valid for this session
 const INVALID_SESSION_ERRORS = {

@@ -53,9 +53,20 @@ function App() {
   const attemptIdRef = useRef(0)
   const activeResolutionRef = useRef({ uid: null, promise: null })
 
-  const activeConfig = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? DEVELOPMENT_CONFIG
-    : PRODUCTION_CONFIG
+  const activeConfig = (() => {
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return DEVELOPMENT_CONFIG
+    }
+    if (import.meta.env.VITE_AUTH_HUB_URL || import.meta.env.VITE_AUTH_API_BASE) {
+      return {
+        ...PRODUCTION_CONFIG,
+        appEnv: import.meta.env.VITE_APP_ENV || 'staging',
+        authApiBase: import.meta.env.VITE_AUTH_API_BASE || PRODUCTION_CONFIG.authApiBase,
+        authHubUrl: import.meta.env.VITE_AUTH_HUB_URL || PRODUCTION_CONFIG.authHubUrl
+      }
+    }
+    return PRODUCTION_CONFIG
+  })()
 
   // Clears Portal auth state and returns the user to login with an explanatory message
   const invalidateSession = useCallback(async (reason) => {
@@ -364,7 +375,7 @@ function App() {
     await signOutUser()
     clearStoredSession()
     setLoading(false)
-    const authHubUrl = window.location.hostname === 'localhost' ? 'http://localhost:4000' : 'https://auth.lanzar.me';
+    const authHubUrl = import.meta.env.VITE_AUTH_HUB_URL || (window.location.hostname === 'localhost' ? 'http://localhost:4000' : 'https://auth.lanzar.me');
     window.location.href = `${authHubUrl}?logout=true&redirect_uri=${encodeURIComponent(window.location.origin)}`;
   }
 

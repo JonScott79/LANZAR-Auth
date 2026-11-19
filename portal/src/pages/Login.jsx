@@ -26,9 +26,20 @@ export default function Login({
     loadingMsgRef.current = loadingMsg
   }, [loadingMsg])
 
-  const activeConfig = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? DEVELOPMENT_CONFIG
-    : PRODUCTION_CONFIG
+  const activeConfig = (() => {
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return DEVELOPMENT_CONFIG
+    }
+    if (import.meta.env.VITE_AUTH_HUB_URL || import.meta.env.VITE_AUTH_API_BASE) {
+      return {
+        ...PRODUCTION_CONFIG,
+        appEnv: import.meta.env.VITE_APP_ENV || 'staging',
+        authApiBase: import.meta.env.VITE_AUTH_API_BASE || PRODUCTION_CONFIG.authApiBase,
+        authHubUrl: import.meta.env.VITE_AUTH_HUB_URL || PRODUCTION_CONFIG.authHubUrl
+      }
+    }
+    return PRODUCTION_CONFIG
+  })()
 
   // Manage <lanzar-auth-modal> lifecycle and event listeners cleanly
   useEffect(() => {

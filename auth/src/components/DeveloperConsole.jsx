@@ -322,9 +322,9 @@ export default function DeveloperConsole({ user, notify }) {
               {!billing?.stripeConfigured && ' (Stripe test keys not attached yet — checkout unlocks once STRIPE_SECRET_KEY=sk_test_... is configured)'}
             </p>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '8px' }}>
-              <button type="button" className="btn-secondary-deck" onClick={() => handleUpgrade('launch')}>Launch ($29/mo)</button>
-              <button type="button" className="btn-secondary-deck" onClick={() => handleUpgrade('growth')}>Growth ($99/mo)</button>
-              <button type="button" className="btn-secondary-deck" onClick={() => handleUpgrade('scale')}>Scale ($299/mo)</button>
+              <button type="button" className="btn-secondary-deck" onClick={() => handleUpgrade('launch')}>Launch ($29.99/mo)</button>
+              <button type="button" className="btn-secondary-deck" onClick={() => handleUpgrade('growth')}>Growth ($99.99/mo)</button>
+              <button type="button" className="btn-secondary-deck" onClick={() => handleUpgrade('scale')}>Scale ($299.99/mo)</button>
             </div>
           </div>
 

@@ -205,6 +205,7 @@ function createApp({ config, db, authAdmin, services = {}, stores = {} }) {
     db,
     authAdmin,
     sessionService,
+    oidcTokenService,
     authenticateUserMiddleware: authMiddleware.authenticateUserMiddleware,
     isUserAdmin: authMiddleware.isUserAdmin
   });
